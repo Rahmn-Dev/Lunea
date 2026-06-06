@@ -5,6 +5,7 @@ struct SidebarView: View {
     @State private var isHovered = false
     @Binding var selectedTab: ContentView.Tab
     @State private var isAccordionHovered = false
+    @State private var isThemesExpanded = false
     
     
     // 🔥 BINDING BARU: Terhubung langsung ke ContentView
@@ -123,38 +124,51 @@ struct SidebarView: View {
 
             Spacer()
             
-            DisclosureGroup {
-                VStack(alignment: .leading, spacing: 2) {
+            VStack(spacing: 0) {
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                        isThemesExpanded.toggle()
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: "paintpalette.fill")
+                            .font(.system(size: 14))
+                            .frame(width: 20)
+
+                        if !isCollapsed {
+                            Text("Themes")
+                                .font(.system(size: 13, weight: .bold))
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .rotationEffect(.degrees(isThemesExpanded ? 90 : 0))
+                                .foregroundColor(.white.opacity(0.4))
+                        }
+                    }
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 12)
+                    .foregroundColor(.white.opacity(isAccordionHovered ? 1.0 : 0.7))
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(isAccordionHovered ? Color.white.opacity(0.08) : Color.clear)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { isAccordionHovered = $0 }
+
+                if isThemesExpanded {
+                    VStack(alignment: .leading, spacing: 2) {
                         ForEach(availableThemes, id: \.name) { theme in
                             ThemeButton(theme: theme, state: state, isCollapsed: isCollapsed)
                         }
                     }
                     .padding(.top, 4)
-            } label: {
-                HStack {
-                    Image(systemName: "paintpalette.fill")
-                        .font(.system(size: 14))
-                        .frame(width: 20)
-                    
-                    if !isCollapsed {
-                        Text("Themes")
-                            .font(.system(size: 13, weight: .bold))
-                        Spacer()
-                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
-                .padding(.vertical, 8)
-                .padding(.horizontal, 12)
-                .foregroundColor(.white.opacity(isAccordionHovered ? 1.0 : 0.7))
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(isAccordionHovered ? Color.white.opacity(0.08) : Color.clear)
-                )
-                .contentShape(Rectangle()) // 🔥 Header akordion sekarang bisa diklik di area kosongnya
-                .onHover { isAccordionHovered = $0 }
             }
             .padding(.horizontal, isCollapsed ? 8 : 12)
             .padding(.bottom, 16)
-            .accentColor(.white.opacity(isCollapsed ? 0 : 0.5))
 
             // --- BOTTOM USER PROFILE (Menciut jadi Avatar Bulat saja) ---
             Button {} label: {
