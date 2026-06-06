@@ -120,12 +120,46 @@ class YouTubeService: ObservableObject {
 }
 
 // MARK: - App State (ViewModel)
+struct AppTheme {
+    let name: String
+    let accentColor: Color
+    let backgroundColor: Color
+    let sidebarColor: Color
+    let gradientColors: [Color] // 🔥 Palet warna untuk BackgroundOrbs
+}
+
+let availableThemes: [AppTheme] = [
+    AppTheme(
+        name: "Midnight Red",
+        accentColor: Color(hex: "FA2E5B"),
+        backgroundColor: Color(hex: "0A0A12"),
+        sidebarColor: Color(hex: "12121A"),
+        gradientColors: [Color(hex: "0A0A12"), Color(hex: "1A1A2E"), Color(hex: "16213E")]
+    ),
+    AppTheme(
+        name: "Cyber Blue",
+        accentColor: Color(hex: "00C8FF"),
+        backgroundColor: Color(hex: "050A10"),
+        sidebarColor: Color(hex: "0A121A"),
+        gradientColors: [Color(hex: "050A10"), Color(hex: "0A1929"), Color(hex: "003366")]
+    ),
+    AppTheme(
+        name: "Emerald Forest",
+        accentColor: Color(hex: "00FF9D"),
+        backgroundColor: Color(hex: "05100A"),
+        sidebarColor: Color(hex: "0A1A12"),
+        gradientColors: [Color(hex: "05100A"), Color(hex: "0A251A"), Color(hex: "004D2D")]
+    )
+]
 
 @MainActor
 class AppState: ObservableObject {
+    
+    
     @Published var apiKey: String = "" {
         didSet { YouTubeService.apiKey = apiKey }
     }
+    @Published var currentTheme: AppTheme
     @Published var isPlayerMinimized = false
     @Published var isSearchActive = false
     @Published var trendingVideos: [YouTubeVideoDetail] = []
@@ -140,7 +174,7 @@ class AppState: ObservableObject {
     @Published var selectedCategory = "Semua"
     @Published var showApiKeySheet = false
     @Published var nextPageToken: String? = nil
-
+    
     let categories = ["Semua", "Musik", "Gaming", "Berita", "Olahraga", "Tech", "Komedi", "Film"]
     // YouTube category IDs mapping
     let categoryIds: [String: String] = [
@@ -152,6 +186,7 @@ class AppState: ObservableObject {
     private let keyStorageKey = "watchtube_api_key"
 
     init() {
+        self.currentTheme = availableThemes[0]
         // Load saved API key
         if let saved = UserDefaults.standard.string(forKey: keyStorageKey), !saved.isEmpty {
             apiKey = saved
@@ -166,6 +201,12 @@ class AppState: ObservableObject {
         UserDefaults.standard.set(key, forKey: keyStorageKey)
         showApiKeySheet = false
         Task { await loadHome() }
+    }
+    
+    func changeTheme(to theme: AppTheme) {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            self.currentTheme = theme
+        }
     }
 
     func loadHome() async {

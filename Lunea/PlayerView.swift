@@ -225,7 +225,7 @@ struct PlayerDetailsView: View {
                             withAnimation { isDescExpanded.toggle() }
                         }
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(Color(hex: "FA2E5B"))
+                        .foregroundColor(state.currentTheme.accentColor)
                         .buttonStyle(.plain)
                     }
                 }

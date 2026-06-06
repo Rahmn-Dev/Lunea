@@ -1,9 +1,11 @@
 import SwiftUI
 
 struct SidebarView: View {
+    @ObservedObject var state: AppState
     @State private var isHovered = false
     @Binding var selectedTab: ContentView.Tab
-    @ObservedObject var state: AppState
+    @State private var isAccordionHovered = false
+    
     
     // 🔥 BINDING BARU: Terhubung langsung ke ContentView
     @Binding var isCollapsed: Bool
@@ -23,6 +25,7 @@ struct SidebarView: View {
     ]
 
     var body: some View {
+        
         VStack(alignment: isCollapsed ? .center : .leading, spacing: 0) {
             
             // --- TOP HEADER: Window Controls & Collapse Button Side by Side ---
@@ -78,7 +81,7 @@ struct SidebarView: View {
                     
                     ForEach(menuItems, id: \.key) { item in
                         SidebarRow(
-                            icon: item.icon,
+                            state: state, icon: item.icon,
                             label: item.label,
                             isActive: selectedTab == item.key,
                             isCollapsed: isCollapsed,
@@ -95,6 +98,8 @@ struct SidebarView: View {
 
                     Spacer().frame(height: 24)
                     
+                    
+                    
                     if !isCollapsed {
                         SidebarSectionLabel(text: "Koleksi Saya")
                             .transition(.opacity)
@@ -104,7 +109,7 @@ struct SidebarView: View {
                     
                     ForEach(libraryItems, id: \.key) { item in
                         SidebarRow(
-                            icon: item.icon,
+                            state: state, icon: item.icon,
                             label: item.label,
                             isActive: selectedTab == item.key,
                             isCollapsed: isCollapsed,
@@ -117,6 +122,39 @@ struct SidebarView: View {
             }
 
             Spacer()
+            
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 2) {
+                        ForEach(availableThemes, id: \.name) { theme in
+                            ThemeButton(theme: theme, state: state, isCollapsed: isCollapsed)
+                        }
+                    }
+                    .padding(.top, 4)
+            } label: {
+                HStack {
+                    Image(systemName: "paintpalette.fill")
+                        .font(.system(size: 14))
+                        .frame(width: 20)
+                    
+                    if !isCollapsed {
+                        Text("Tema")
+                            .font(.system(size: 13, weight: .bold))
+                        Spacer()
+                    }
+                }
+                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+                .foregroundColor(.white.opacity(isAccordionHovered ? 1.0 : 0.7))
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(isAccordionHovered ? Color.white.opacity(0.08) : Color.clear)
+                )
+                .contentShape(Rectangle()) // 🔥 Header akordion sekarang bisa diklik di area kosongnya
+                .onHover { isAccordionHovered = $0 }
+            }
+            .padding(.horizontal, isCollapsed ? 8 : 12)
+            .padding(.bottom, 16)
+            .accentColor(.white.opacity(isCollapsed ? 0 : 0.5))
 
             // --- BOTTOM USER PROFILE (Menciut jadi Avatar Bulat saja) ---
             Button {} label: {
@@ -159,6 +197,75 @@ struct SidebarView: View {
         }
     }
 }
+// MARK: - Tombol Tema Mandiri (Anti-Bug Hover & Klik Seluruh Area)
+
+struct ThemeButton: View {
+    let theme: AppTheme
+    @ObservedObject var state: AppState
+    let isCollapsed: Bool
+    @State private var isHovered = false
+
+    var body: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                state.changeTheme(to: theme)
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Circle()
+                    .fill(theme.accentColor)
+                    .frame(width: 8, height: 8)
+                
+                if !isCollapsed {
+                    Text(theme.name)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white.opacity(isHovered ? 1.0 : 0.8))
+                }
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            // Mengatur alignment saat sidebar menciut atau memanjang
+            .frame(maxWidth: .infinity, alignment: isCollapsed ? .center : .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(state.currentTheme.name == theme.name ? Color.white.opacity(0.15) : (isHovered ? Color.white.opacity(0.07) : Color.clear))
+            )
+            .contentShape(Rectangle()) // 🔥 Memaksa area kosong di kanan teks tetap bisa diklik
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+}
+struct ThemeBackground: View {
+    @ObservedObject var state: AppState
+    @State private var start = UnitPoint(x: 0, y: -0.5)
+    @State private var end = UnitPoint(x: 1, y: 1.5)
+
+    var body: some View {
+        TimelineView(.animation) { context in
+            let time = context.date.timeIntervalSinceReferenceDate
+            let angle = time.remainder(dividingBy: 5) * (Double.pi * 2) / 5
+            
+            // 🔥 Menggunakan palet khusus dari tema
+            LinearGradient(
+                colors: state.currentTheme.gradientColors,
+                startPoint: start,
+                endPoint: end
+            )
+            .hueRotation(.degrees(sin(angle) * 15)) // Perputaran warna yang lebih halus
+            .ignoresSafeArea()
+            .onAppear {
+                withAnimation(.easeInOut(duration: 10).repeatForever(autoreverses: true)) {
+                    start = UnitPoint(x: 1, y: 0)
+                    end = UnitPoint(x: 0, y: 1)
+                }
+            }
+        }
+    }
+}
+
 struct SidebarSectionLabel: View {
     let text: String
 
@@ -176,6 +283,7 @@ struct SidebarSectionLabel: View {
 // MARK: - Sidebar Row Component (Responsive Width)
 
 struct SidebarRow: View {
+    @ObservedObject var state: AppState
     let icon: String
     let label: String
     let isActive: Bool
@@ -211,8 +319,8 @@ struct SidebarRow: View {
             .background {
                 if isActive {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color(hex: "FA2E5B"))
-                        .shadow(color: Color(hex: "FA2E5B").opacity(0.3), radius: 6, y: 1)
+                        .fill(state.currentTheme.accentColor)
+                        .shadow(color: state.currentTheme.accentColor.opacity(0.3), radius: 6, y: 1)
                 } else if isHovered {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(Color.white.opacity(0.08))

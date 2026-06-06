@@ -134,6 +134,7 @@ struct YouTubeLogo: View {
 // MARK: - Glass Chip
 
 struct GlassChip: View {
+    @ObservedObject var state: AppState
     let label: String
     let isSelected: Bool
     let action: () -> Void
@@ -151,8 +152,8 @@ struct GlassChip: View {
                 .background {
                     if isSelected {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(Color(hex: "FA2E5B"))
-                            .shadow(color: Color(hex: "FA2E5B").opacity(0.4), radius: 6, y: 2)
+                            .fill(state.currentTheme.accentColor)
+                            .shadow(color: state.currentTheme.accentColor.opacity(0.4), radius: 6, y: 2)
                     } else {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
                             .fill(Color.white.opacity(isHovered ? 0.12 : 0.06))

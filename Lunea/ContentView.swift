@@ -16,11 +16,11 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            BackgroundOrbs()
+            ThemeBackground(state: state)
 
             HStack(spacing: 16) {
                 // KIRI: Sidebar (Lebar dinamis: 75 vs 250)
-                SidebarView(selectedTab: $selectedTab, state: state, isCollapsed: $isSidebarCollapsed)
+                SidebarView(state: state, selectedTab: $selectedTab, isCollapsed: $isSidebarCollapsed)
                     .frame(width: isSidebarCollapsed ? 75 : 250) // 🔥 KUNCI ANIMASI LEBAR
                     .background(.ultraThinMaterial)
                     .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -60,7 +60,7 @@ struct ContentView: View {
                     .animation(.easeInOut(duration: 0.3), value: state.isSearchActive)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .background(Color(hex: "0A0A12").opacity(0.75))
+                .background(.ultraThinMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -116,7 +116,7 @@ struct TopBar: View {
                 } label: {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(isSearchFocused ? Color(hex: "FA2E5B") : .white.opacity(0.5))
+                        .foregroundColor(isSearchFocused ? state.currentTheme.accentColor : .white.opacity(0.5))
                 }
                 .buttonStyle(.plain)
 
@@ -150,11 +150,11 @@ struct TopBar: View {
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(
-                        isSearchFocused ? Color(hex: "FA2E5B").opacity(0.6) : Color.white.opacity(0.1),
+                        isSearchFocused ? state.currentTheme.accentColor.opacity(0.6) : Color.white.opacity(0.1),
                         lineWidth: isSearchFocused ? 1.5 : 0.5
                     )
             }
-            .shadow(color: isSearchFocused ? Color(hex: "FA2E5B").opacity(0.15) : .clear, radius: 12)
+            .shadow(color: isSearchFocused ? state.currentTheme.accentColor.opacity(0.15) : .clear, radius: 12)
             // KUNCI FIX: .onTapGesture dihilangkan dari sini agar 'Enter' tidak diblokir!
             .onHover { isHovered = $0 }
             .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isSearchFocused)
@@ -245,7 +245,7 @@ struct HomeView: View {
                     HStack(spacing: 10) {
                         Spacer() // Dorong ke tengah
                         ForEach(state.categories, id: \.self) { cat in
-                            GlassChip(label: cat, isSelected: state.selectedCategory == cat) {
+                            GlassChip(state: state, label: cat, isSelected: state.selectedCategory == cat) {
                                 state.selectedCategory = cat
                                 Task { await state.loadHome() }
                             }
@@ -258,7 +258,7 @@ struct HomeView: View {
 
                 // 1. Hero Card
                 if let first = state.trendingVideos.first {
-                    HeroFeaturedCard(video: first, action: { Task { await state.selectVideo(first.id) } })
+                    HeroFeaturedCard(state: state, video: first, action: { Task { await state.selectVideo(first.id) } })
                 }
 
                 // 2. Horizontal Scroll Row
@@ -268,7 +268,7 @@ struct HomeView: View {
                         HStack(spacing: 20) {
                             ForEach(state.trendingVideos.prefix(5).dropFirst()) { video in
                                 VideoCard(
-                                    video: video,
+                                    state: state, video: video,
                                     action: { Task { await state.selectVideo(video.id) } }
                                 )
                                 .frame(width: 280)
@@ -285,7 +285,7 @@ struct HomeView: View {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 20) {
                         ForEach(state.trendingVideos.dropFirst(6)) { video in
                             VideoCard(
-                                    video: video,
+                                state: state, video: video,
                                     action: { Task { await state.selectVideo(video.id) } }
                                 )
                         }
@@ -315,17 +315,17 @@ struct SearchResultsView: View {
 
                 // 🔥 LOGIKA TAMPILAN SEARCH DIPERBAIKI
                 if state.isSearching {
-                    HStack { Spacer(); ProgressView().scaleEffect(1.4).tint(Color(hex: "FA2E5B")); Spacer() }
+                    HStack { Spacer(); ProgressView().scaleEffect(1.4).tint(state.currentTheme.accentColor); Spacer() }
                         .padding(.top, 80)
                 } else if let err = state.errorMessage {
-                    ErrorView(message: err) { Task { await state.search() } }
+                    ErrorView(state: state, message: err) { Task { await state.search() } }
                 } else if state.searchResults.isEmpty {
                     HStack { Spacer(); Text("Video tidak ditemukan.").font(.system(size: 14)).foregroundColor(.white.opacity(0.5)); Spacer() }
                         .padding(.top, 60)
                 } else {
                     ForEach(state.searchResults) { item in
                         if let vid = item.videoId {
-                            SearchResultCard(item: item)
+                            SearchResultCard(state: state, item: item)
                                 .onTapGesture { Task { await state.selectVideo(vid) } }
                         }
                     }
@@ -341,6 +341,7 @@ struct SearchResultsView: View {
 // MARK: - Error
 
 struct ErrorView: View {
+    @ObservedObject var state: AppState
     let message: String; let retry: () -> Void
     var body: some View {
         VStack(spacing: 16) {
@@ -349,7 +350,7 @@ struct ErrorView: View {
             Button("Coba Lagi", action: retry)
                 .font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
                 .padding(.horizontal, 20).padding(.vertical, 9)
-                .background(Color(hex: "FA2E5B")).clipShape(Capsule()).buttonStyle(.plain)
+                .background(state.currentTheme.accentColor).clipShape(Capsule()).buttonStyle(.plain)
         }
         .frame(maxWidth: .infinity, minHeight: 260)
     }
@@ -393,8 +394,8 @@ struct ApiKeySheet: View {
                 Text("Simpan & Mulai")
                     .font(.system(size: 14, weight: .bold)).foregroundColor(.white)
                     .frame(width: 180, height: 42)
-                    .background(Color(hex: "FA2E5B")).clipShape(Capsule())
-                    .shadow(color: Color(hex: "FA2E5B").opacity(0.4), radius: 12)
+                    .background(state.currentTheme.accentColor).clipShape(Capsule())
+                    .shadow(color: state.currentTheme.accentColor.opacity(0.4), radius: 12)
             }
             .buttonStyle(.plain).disabled(input.isEmpty)
 
@@ -403,7 +404,7 @@ struct ApiKeySheet: View {
                 .font(.system(size: 12)).foregroundColor(Color(hex: "FF6666"))
         }
         .padding(40)
-        .background { BackgroundOrbs() }
+        .background { ThemeBackground(state: state) }
         .frame(width: 460, height: 380)
         .preferredColorScheme(.dark)
     }

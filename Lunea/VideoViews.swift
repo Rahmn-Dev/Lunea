@@ -3,6 +3,7 @@ import SwiftUI
 // MARK: - Real Video Card (from API)
 
 struct VideoCard: View {
+    @ObservedObject var state: AppState
     let video: YouTubeVideoDetail
     let action: () -> Void
     @State private var isHovered = false
@@ -46,7 +47,7 @@ struct VideoCard: View {
                         
                         Image(systemName: "play.circle.fill")
                             .font(.system(size: 36))
-                            .foregroundColor(Color(hex: "FA2E5B")) // Aksen merah Lunea
+                            .foregroundColor(state.currentTheme.accentColor) // Aksen merah Lunea
                             .frame(maxWidth: .infinity, maxHeight: .infinity) // Rata tengah
                     }
                 }
@@ -109,6 +110,7 @@ struct VideoCard: View {
 // MARK: - Hero Card (Super Smooth 60FPS)
 
 struct HeroFeaturedCard: View {
+    @ObservedObject var state: AppState
     let video: YouTubeVideoDetail
     let action: () -> Void
     @State private var isHovered = false
@@ -136,7 +138,7 @@ struct HeroFeaturedCard: View {
                         Color.black.opacity(0.2)
                         Image(systemName: "play.circle.fill")
                             .font(.system(size: 48))
-                            .foregroundColor(Color(hex: "FA2E5B"))
+                            .foregroundColor(state.currentTheme.accentColor)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
 
@@ -153,7 +155,7 @@ struct HeroFeaturedCard: View {
                     Text("Top Trending")
                         .font(.system(size: 11, weight: .bold)).foregroundColor(.white.opacity(0.9))
                         .padding(.horizontal, 12).padding(.vertical, 6)
-                        .background(Color(hex: "FA2E5B").opacity(0.8))
+                        .background(state.currentTheme.accentColor.opacity(0.8))
                         .clipShape(Capsule())
                         .padding(16)
                 }
@@ -194,6 +196,7 @@ struct HeroFeaturedCard: View {
 // MARK: - Search Result Card
 
 struct SearchResultCard: View {
+    @ObservedObject var state: AppState
     let item: YouTubeSearchItem
     @State private var isHovered = false
 
@@ -234,7 +237,7 @@ struct SearchResultCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Image(systemName: "play.circle.fill")
-                .font(.system(size: 28)).foregroundColor(isHovered ? Color(hex: "FA2E5B") : .white.opacity(0.2))
+                .font(.system(size: 28)).foregroundColor(isHovered ? state.currentTheme.accentColor : .white.opacity(0.2))
                 .animation(.easeInOut(duration: 0.15), value: isHovered)
         }
         .padding(12)
