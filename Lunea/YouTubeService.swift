@@ -174,6 +174,7 @@ class AppState: ObservableObject {
     @Published var selectedCategory = "Semua"
     @Published var showApiKeySheet = false
     @Published var nextPageToken: String? = nil
+    @Published var relatedVideoDetails: [YouTubeVideoDetail] = []
     
     let categories = ["All", "Music", "Gaming", "News", "Sports", "Tech", "Comedy", "Movies"]
     // YouTube category IDs mapping
@@ -206,6 +207,22 @@ class AppState: ObservableObject {
     func changeTheme(to theme: AppTheme) {
         withAnimation(.easeInOut(duration: 0.3)) {
             self.currentTheme = theme
+        }
+    }
+    // Di dalam AppState, tambahkan method ini:
+    func loadRelatedVideos(for videoId: String) async {
+        do {
+            let res = try await service.fetchRelated(videoId: videoId)
+            // Ambil ID-nya, lalu fetch detail lengkap biar ada thumbnail medium + durasi
+            let ids = res.items.compactMap { $0.videoId }
+            if !ids.isEmpty {
+                let details = try await service.fetchVideoDetails(ids: ids)
+                // Simpan ke trendingVideos sementara TIDAK — pakai array terpisah
+                // Tambahkan @Published var relatedVideoDetails: [YouTubeVideoDetail] = []
+                self.relatedVideoDetails = details.items
+            }
+        } catch {
+            print("❌ Gagal load related videos:", error)
         }
     }
 
@@ -291,6 +308,7 @@ class AppState: ObservableObject {
             do {
                 let detailResponse = try await service.fetchVideoDetails(ids: [videoId])
                 self.selectedVideoDetail = detailResponse.items.first
+                await loadRelatedVideos(for: videoId)
             } catch {
                 self.errorMessage = error.localizedDescription
                 print("❌ Gagal load detail video:", error)
