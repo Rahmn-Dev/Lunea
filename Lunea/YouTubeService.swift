@@ -187,13 +187,17 @@ class AppState: ObservableObject {
     }
 
     func search() async {
-            guard !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-            isSearching = true
-            errorMessage = nil
-            isSearchActive = true
+            let query = searchQuery.trimmingCharacters(in: .whitespaces)
+            guard !query.isEmpty else { return }
+            
+            // 🔥 KUNCI: Gerbang anti-spam HARUS ditaruh sebelum isSearching diubah jadi true!
             guard !isSearching else { return }
             
-            // 🔥 UX MAGIC: Jika player sedang layar penuh, otomatis minimize agar hasil search terlihat
+            isSearching = true
+            isSearchActive = true
+            errorMessage = nil
+            
+            // UX MAGIC: Jika player sedang layar penuh, otomatis minimize agar hasil search terlihat
             if selectedVideoId != nil && !isPlayerMinimized {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     isPlayerMinimized = true
@@ -201,13 +205,9 @@ class AppState: ObservableObject {
             }
             
             do {
-                let res = try await service.search(query: searchQuery)
+                let res = try await service.search(query: query)
                 searchResults = res.items
                 nextPageToken = res.nextPageToken
-                
-                // 🔥 FIX: Hapus atau comment kode di bawah ini agar player tidak mati saat search!
-                // selectedVideoId = nil
-                
             } catch {
                 errorMessage = error.localizedDescription
                 print("❌ Search Error:", error)
@@ -216,22 +216,26 @@ class AppState: ObservableObject {
         }
 
     func selectVideo(_ videoId: String) async {
-        selectedVideoId = videoId
-        isPlayerMinimized = false
-        if selectedVideoId == videoId && selectedVideoDetail != nil && !isPlayerMinimized {
-                    return
-                }
-        // Fetch detail + related in parallel
-        //async let detail = service.fetchVideoDetails(ids: [videoId])
-        //async let related = service.fetchRelated(videoId: videoId)
-        do {
-            let detailResponse = try await service.fetchVideoDetails(ids: [videoId])
-            selectedVideoDetail = detailResponse.items.first
-        } catch {
-            errorMessage = error.localizedDescription
-            print("❌ Gagal load detail video:", error)
+            // 🔥 KUNCI: Cek dulu apakah video yang diklik SAMA dengan yang sedang diputar.
+            // Jika iya (dan sudah ada detailnya), cukup besarkan playernya lalu berhentikan fungsinya.
+            if self.selectedVideoId == videoId && self.selectedVideoDetail != nil {
+                self.isPlayerMinimized = false
+                return
+            }
+            
+            // BARU kita ganti ID-nya dan reset detail lama karena ini pasti video baru!
+            self.selectedVideoId = videoId
+            self.selectedVideoDetail = nil // Mengosongkan judul lama agar UI jadi "Memuat..."
+            self.isPlayerMinimized = false
+            
+            do {
+                let detailResponse = try await service.fetchVideoDetails(ids: [videoId])
+                self.selectedVideoDetail = detailResponse.items.first
+            } catch {
+                self.errorMessage = error.localizedDescription
+                print("❌ Gagal load detail video:", error)
+            }
         }
-    }
     func closePlayer() {
             selectedVideoId = nil
             selectedVideoDetail = nil
