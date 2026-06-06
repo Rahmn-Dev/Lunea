@@ -58,77 +58,37 @@ extension View {
 // MARK: - Animated Background Orbs
 
 struct BackgroundOrbs: View {
-    @State private var animate = false
+    @State private var start = UnitPoint(x: 0, y: -0.5)
+        @State private var end = UnitPoint(x: 1, y: 1.5)
+        
+        let colors = [
+            Color(hex: "0A0A12"),
+            Color(hex: "1A1A2E"),
+            Color(hex: "16213E"),
+            Color(hex: "0A0A12")
+        ]
 
-    var body: some View {
-        ZStack {
-            // Deep space base
-            LinearGradient(
-                colors: [
-                    Color(hex: "060612"),
-                    Color(hex: "0d1a2e"),
-                    Color(hex: "1a0d2e"),
-                    Color(hex: "0a1a1a")
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-
-            // Orb 1 — Purple
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [Color(hex: "7c3aed").opacity(0.6), .clear],
-                        center: .center, startRadius: 0, endRadius: 200
-                    )
+        var body: some View {
+            TimelineView(.animation) { context in
+                // Menghitung perubahan waktu untuk menggerakkan gradien
+                let time = context.date.timeIntervalSinceReferenceDate
+                let angle = time.remainder(dividingBy: 5) * (Double.pi * 2) / 5
+                
+                LinearGradient(
+                    gradient: Gradient(colors: colors),
+                    startPoint: start,
+                    endPoint: end
                 )
-                .frame(width: 400, height: 400)
-                .offset(x: animate ? -280 : -260, y: animate ? -200 : -220)
-                .blur(radius: 60)
-                .animation(.easeInOut(duration: 6).repeatForever(autoreverses: true), value: animate)
-
-            // Orb 2 — Pink/Red
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [Color(hex: "be185d").opacity(0.5), .clear],
-                        center: .center, startRadius: 0, endRadius: 180
-                    )
-                )
-                .frame(width: 360, height: 360)
-                .offset(x: animate ? 280 : 260, y: animate ? 240 : 220)
-                .blur(radius: 60)
-                .animation(.easeInOut(duration: 8).repeatForever(autoreverses: true), value: animate)
-
-            // Orb 3 — Cyan
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [Color(hex: "0891b2").opacity(0.4), .clear],
-                        center: .center, startRadius: 0, endRadius: 150
-                    )
-                )
-                .frame(width: 300, height: 300)
-                .offset(x: animate ? 200 : 180, y: animate ? -60 : -80)
-                .blur(radius: 50)
-                .animation(.easeInOut(duration: 7).repeatForever(autoreverses: true), value: animate)
-
-            // Orb 4 — Red (YouTube accent)
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [Color.red.opacity(0.3), .clear],
-                        center: .center, startRadius: 0, endRadius: 100
-                    )
-                )
-                .frame(width: 200, height: 200)
-                .offset(x: animate ? -50 : -30, y: animate ? 80 : 60)
-                .blur(radius: 40)
-                .animation(.easeInOut(duration: 5).repeatForever(autoreverses: true), value: animate)
+                .hueRotation(.degrees(sin(angle) * 20)) // Efek pergeseran warna yang lembut
+                .ignoresSafeArea()
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 8).repeatForever(autoreverses: true)) {
+                        start = UnitPoint(x: 1, y: 0)
+                        end = UnitPoint(x: 0, y: 1)
+                    }
+                }
+            }
         }
-        .ignoresSafeArea()
-        .onAppear { animate = true }
-    }
 }
 
 // MARK: - Traffic Light Buttons

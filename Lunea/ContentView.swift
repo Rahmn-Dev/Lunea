@@ -5,6 +5,9 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var state = AppState()
     @State private var selectedTab: Tab = .home
+    
+    // 🔥 TAMBAHAN BARU: Mengatur status collapse sidebar
+    @State private var isSidebarCollapsed = false
 
     enum Tab: String, Equatable {
         case home, explore, shorts, subs
@@ -16,9 +19,9 @@ struct ContentView: View {
             BackgroundOrbs()
 
             HStack(spacing: 16) {
-                // KIRI: Sidebar
-                SidebarView(selectedTab: $selectedTab, state: state)
-                    .frame(width: 250)
+                // KIRI: Sidebar (Lebar dinamis: 75 vs 250)
+                SidebarView(selectedTab: $selectedTab, state: state, isCollapsed: $isSidebarCollapsed)
+                    .frame(width: isSidebarCollapsed ? 75 : 250) // 🔥 KUNCI ANIMASI LEBAR
                     .background(.ultraThinMaterial)
                     .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                     .overlay {
@@ -29,6 +32,8 @@ struct ContentView: View {
                     .padding(.vertical, 16)
                     .padding(.leading, 16)
                     .environment(\.colorScheme, .dark)
+                    // Berikan efek animasi pegas saat lebar sidebar berubah
+                    .animation(.spring(response: 0.35, dampingFraction: 0.82), value: isSidebarCollapsed)
 
                 // KANAN: Main Content
                 VStack(spacing: 0) {
@@ -37,8 +42,6 @@ struct ContentView: View {
 
                     // Main View Area
                     ZStack {
-                        // 1. Base Layer (Home / Search)
-                        // 🔥 LOGIKA ROUTING DIPERBAIKI: Sangat stabil mengunci layar
                         if state.isSearchActive {
                             SearchResultsView(state: state)
                                 .transition(.opacity)
@@ -47,10 +50,10 @@ struct ContentView: View {
                                 .transition(.opacity)
                         }
 
-                        // 2. Floating Player Layer (Berjalan tanpa memotong Home)
                         if state.isShowingPlayer, let vid = state.selectedVideoId {
                             FloatingPlayerOverlay(videoId: vid)
                                 .environmentObject(state)
+                                .id(vid)
                         }
                     }
                     .animation(.easeInOut(duration: 0.3), value: state.isShowingPlayer)
@@ -232,53 +235,67 @@ struct HeaderButton: View {
 struct HomeView: View {
     @ObservedObject var state: AppState
     let selectedTab: ContentView.Tab
-    let columns = [GridItem(.adaptive(minimum: 240), spacing: 20)]
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                // Category chips
+            LazyVStack(spacing: 30) {
+                
+                // 🔥 KATEGORI DISINI: Kembali muncul & di-center
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
+                        Spacer() // Dorong ke tengah
                         ForEach(state.categories, id: \.self) { cat in
                             GlassChip(label: cat, isSelected: state.selectedCategory == cat) {
                                 state.selectedCategory = cat
                                 Task { await state.loadHome() }
                             }
                         }
+                        Spacer() // Dorong ke tengah
                     }
-                    .padding(.horizontal, 1)
+                    .frame(minWidth: 1100) // Sesuai permintaanmu
+                }
+                .padding(.vertical, 8)
+
+                // 1. Hero Card
+                if let first = state.trendingVideos.first {
+                    HeroFeaturedCard(video: first, action: { Task { await state.selectVideo(first.id) } })
                 }
 
-                if state.isLoading {
-                    VStack(spacing: 16) {
-                        ProgressView().progressViewStyle(.circular).scaleEffect(1.2).tint(Color(hex: "FA2E5B"))
-                        Text("Memuat...").font(.system(size: 13, weight: .medium)).foregroundColor(.white.opacity(0.4))
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 400)
-                } else if let err = state.errorMessage {
-                    ErrorView(message: err) { Task { await state.loadHome() } }
-                } else {
-                    if let first = state.trendingVideos.first {
-                        HeroFeaturedCard(video: first) {
-                            Task { await state.selectVideo(first.id) }
-                        }
-                    }
-
-                    if state.trendingVideos.count > 1 {
-                        SectionHeader(icon: "play.tv.fill", title: "Top 10 di Trending")
-                            .padding(.top, 10)
-                        LazyVGrid(columns: columns, spacing: 20) {
-                            ForEach(Array(state.trendingVideos.dropFirst())) { video in
-                                VideoCard(video: video) {
-                                    Task { await state.selectVideo(video.id) }
-                                }
+                // 2. Horizontal Scroll Row
+                if state.trendingVideos.count > 5 {
+                    SectionHeader(icon: "rectangle.stack.fill", title: "Rekomendasi Cepat")
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 20) {
+                            ForEach(state.trendingVideos.prefix(5).dropFirst()) { video in
+                                VideoCard(
+                                    video: video,
+                                    action: { Task { await state.selectVideo(video.id) } }
+                                )
+                                .frame(width: 280)
+                                // 🔥 HAPUS .onTapGesture di sini!
                             }
                         }
+                        .padding(.horizontal, 24)
                     }
                 }
 
-                Spacer(minLength: 40)
+                // 3. Grid Layout
+                if state.trendingVideos.count > 6 {
+                    SectionHeader(icon: "square.grid.3x3.fill", title: "Jelajahi Semua")
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 20) {
+                        ForEach(state.trendingVideos.dropFirst(6)) { video in
+                            VideoCard(
+                                    video: video,
+                                    action: { Task { await state.selectVideo(video.id) } }
+                                )
+                        }
+                    }
+                }
+
+                // Trigger Infinite Scroll
+                Color.clear.onAppear {
+                    Task { await state.loadMore() }
+                }
             }
             .padding(24)
         }

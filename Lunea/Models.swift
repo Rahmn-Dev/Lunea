@@ -136,8 +136,14 @@ struct YouTubeVideoDetail: Codable, Identifiable {
 
 struct YouTubeVideoListResponse: Codable {
     let items: [YouTubeVideoDetail]
+    let nextPageToken: String? // 🔥 Tambahkan baris ini
+    
+    // CodingKeys diperlukan agar Swift tidak bingung jika propertinya opsional
+    enum CodingKeys: String, CodingKey {
+        case items
+        case nextPageToken
+    }
 }
-
 // MARK: - Sidebar navigation items
 
 struct NavItem: Identifiable {

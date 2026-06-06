@@ -34,15 +34,18 @@ class YouTubeService: ObservableObject {
 
     // MARK: - Trending / Home feed
 
-    func fetchTrending(regionCode: String = "ID", maxResults: Int = 20) async throws -> YouTubeVideoListResponse {
+    func fetchTrending(regionCode: String = "ID", maxResults: Int = 20, pageToken: String? = nil) async throws -> YouTubeVideoListResponse {
         var components = URLComponents(string: "\(baseURL)/videos")!
-        components.queryItems = [
+        var params: [URLQueryItem] = [
             .init(name: "part", value: "snippet,statistics,contentDetails"),
             .init(name: "chart", value: "mostPopular"),
             .init(name: "regionCode", value: regionCode),
             .init(name: "maxResults", value: "\(maxResults)"),
             .init(name: "key", value: Self.apiKey),
         ]
+        if let token = pageToken { params.append(.init(name: "pageToken", value: token)) }
+        components.queryItems = params
+        
         let (data, response) = try await URLSession.shared.data(from: components.url!)
         try checkResponse(response)
         return try JSONDecoder().decode(YouTubeVideoListResponse.self, from: data)
@@ -174,21 +177,36 @@ class AppState: ObservableObject {
         errorMessage = nil
         do {
             if selectedCategory == "Semua" {
-                let res = try await service.fetchTrending()
-                trendingVideos = res.items
-            } else if let catId = categoryIds[selectedCategory] {
-                let res = try await service.fetchByCategory(categoryId: catId)
-                trendingVideos = res.items
-            }
+                            let res = try await service.fetchTrending()
+                            trendingVideos = res.items
+                            nextPageToken = res.nextPageToken // 🔥 Tambahkan ini agar loadMore bisa jalan
+                        } else if let catId = categoryIds[selectedCategory] {
+                            let res = try await service.fetchByCategory(categoryId: catId)
+                            trendingVideos = res.items
+                            nextPageToken = res.nextPageToken // 🔥 Tambahkan ini agar loadMore bisa jalan
+                        }
         } catch {
             errorMessage = error.localizedDescription
         }
         isLoading = false
     }
+    func loadMore() async {
+            guard !isLoading && nextPageToken != nil else { return }
+            isLoading = true
+            do {
+                let res = try await service.fetchTrending(pageToken: nextPageToken)
+                trendingVideos.append(contentsOf: res.items)
+                nextPageToken = res.nextPageToken
+            } catch {
+                print("❌ Gagal load lebih banyak:", error)
+            }
+            isLoading = false
+        }
 
     func search() async {
             let query = searchQuery.trimmingCharacters(in: .whitespaces)
             guard !query.isEmpty else { return }
+        NSApplication.shared.keyWindow?.makeFirstResponder(nil)
             
             // 🔥 KUNCI: Gerbang anti-spam HARUS ditaruh sebelum isSearching diubah jadi true!
             guard !isSearching else { return }
@@ -216,6 +234,7 @@ class AppState: ObservableObject {
         }
 
     func selectVideo(_ videoId: String) async {
+        NSApplication.shared.keyWindow?.makeFirstResponder(nil)
             // 🔥 KUNCI: Cek dulu apakah video yang diklik SAMA dengan yang sedang diputar.
             // Jika iya (dan sudah ada detailnya), cukup besarkan playernya lalu berhentikan fungsinya.
             if self.selectedVideoId == videoId && self.selectedVideoDetail != nil {
