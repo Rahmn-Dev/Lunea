@@ -175,15 +175,15 @@ class AppState: ObservableObject {
     @Published var showApiKeySheet = false
     @Published var nextPageToken: String? = nil
     
-    let categories = ["Semua", "Musik", "Gaming", "Berita", "Olahraga", "Tech", "Komedi", "Film"]
+    let categories = ["All", "Music", "Gaming", "News", "Sports", "Tech", "Comedy", "Movies"]
     // YouTube category IDs mapping
     let categoryIds: [String: String] = [
-        "Musik": "10", "Gaming": "20", "Berita": "25",
-        "Olahraga": "17", "Tech": "28", "Komedi": "23", "Film": "1"
+        "Music": "10", "Gaming": "20", "News": "25",
+        "Sports": "17", "Tech": "28", "Comedy": "23", "Movies": "1"
     ]
 
     private let service = YouTubeService()
-    private let keyStorageKey = "watchtube_api_key"
+    private let keyStorageKey = ""
 
     init() {
         self.currentTheme = availableThemes[0]

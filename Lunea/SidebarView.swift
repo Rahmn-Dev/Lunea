@@ -11,16 +11,16 @@ struct SidebarView: View {
     @Binding var isCollapsed: Bool
 
     private let menuItems: [(icon: String, label: String, key: ContentView.Tab)] = [
-        ("house.fill", "Beranda", .home),
-        ("safari.fill", "Jelajahi", .explore),
+        ("house.fill", "Home", .home),
+        ("safari.fill", "Explore", .explore),
         ("play.rectangle.fill", "Shorts", .shorts),
-        ("play.tv.fill", "Langganan", .subs),
+        ("play.tv.fill", "Subscribe", .subs),
     ]
     
     private let libraryItems: [(icon: String, label: String, key: ContentView.Tab)] = [
-        ("clock.arrow.circlepath", "Riwayat", .history),
-        ("clock.fill", "Tonton Nanti", .watchlater),
-        ("hand.thumbsup.fill", "Disukai", .liked),
+        ("clock.arrow.circlepath", "History", .history),
+        ("clock.fill", "Watch Later", .watchlater),
+        ("hand.thumbsup.fill", "Liked", .liked),
         ("list.bullet.rectangle.fill", "Playlist", .playlist),
     ]
 
@@ -101,7 +101,7 @@ struct SidebarView: View {
                     
                     
                     if !isCollapsed {
-                        SidebarSectionLabel(text: "Koleksi Saya")
+                        SidebarSectionLabel(text: "My Collection")
                             .transition(.opacity)
                     } else {
                         Divider().background(Color.white.opacity(0.06)).padding(.horizontal, 16).padding(.vertical, 8)
@@ -137,7 +137,7 @@ struct SidebarView: View {
                         .frame(width: 20)
                     
                     if !isCollapsed {
-                        Text("Tema")
+                        Text("Themes")
                             .font(.system(size: 13, weight: .bold))
                         Spacer()
                     }

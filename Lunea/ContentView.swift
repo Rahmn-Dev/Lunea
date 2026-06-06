@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 // MARK: - Root
 
@@ -120,7 +121,7 @@ struct TopBar: View {
                 }
                 .buttonStyle(.plain)
 
-                TextField("Telusuri video...", text: $state.searchQuery)
+                TextField("Find Videos...", text: $state.searchQuery)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.white.opacity(0.95))
@@ -144,11 +145,11 @@ struct TopBar: View {
             .padding(.vertical, 12)
             .frame(width: isSearchFocused ? 480 : 380)
             .background {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 19, style: .continuous)
                     .fill(Color.white.opacity(isSearchFocused ? 0.08 : (isHovered ? 0.06 : 0.04)))
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 19, style: .continuous)
                     .strokeBorder(
                         isSearchFocused ? state.currentTheme.accentColor.opacity(0.6) : Color.white.opacity(0.1),
                         lineWidth: isSearchFocused ? 1.5 : 0.5
@@ -235,6 +236,8 @@ struct HeaderButton: View {
 struct HomeView: View {
     @ObservedObject var state: AppState
     let selectedTab: ContentView.Tab
+    @State private var currentIndex = 0
+    let timer = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
 
     var body: some View {
         ScrollView {
@@ -257,13 +260,51 @@ struct HomeView: View {
                 .padding(.vertical, 8)
 
                 // 1. Hero Card
-                if let first = state.trendingVideos.first {
-                    HeroFeaturedCard(state: state, video: first, action: { Task { await state.selectVideo(first.id) } })
+                // 1. Carousel Hero (macOS Compatible)
+                // 1. Carousel Hero (dengan Autoscroll 3 detik)
+                // 1. Carousel Hero (Peek-a-boo style)
+                if !state.trendingVideos.isEmpty {
+                    let items = Array(state.trendingVideos.prefix(5))
+                    
+                    // Timer autoscroll 3 detik
+                    let timer = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
+                    
+                    ScrollViewReader { proxy in
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            LazyHStack(spacing: 20) { // Jarak antar kartu
+                                ForEach(0..<items.count, id: \.self) { index in
+                                    HeroFeaturedCard(
+                                        state: state,
+                                        video: items[index],
+                                        action: { Task { await state.selectVideo(items[index].id) } }
+                                    )
+                                    // PENTING: Lebar kartu dibuat dinamis agar kartu kiri/kanan bisa intip
+                                    // count: 1 berarti full width, tapi di-inset oleh contentMargins
+                                    .containerRelativeFrame(.horizontal, count: 1, spacing: 20)
+                                    .clipShape(RoundedRectangle(cornerRadius: 35, style: .continuous))
+                                    .id(index)
+                                }
+                            }
+                            .scrollTargetLayout() // Agar scroll bisa "snap" ke kartu
+                        }
+                        .scrollTargetBehavior(.viewAligned) // Efek "nempel" pas di tengah
+                        // INI RAHASIANYA: contentMargins membuat kartu di pinggir terlihat
+                        .contentMargins(.horizontal, 80, for: .scrollContent)
+                        .frame(height: 370)
+                        .onReceive(timer) { _ in
+                            withAnimation(.easeInOut(duration: 0.8)) {
+                                // Logika pindah ke kanan otomatis
+                                let nextIndex = (currentIndex + 1) % items.count
+                                currentIndex = nextIndex
+                                proxy.scrollTo(nextIndex, anchor: .center)
+                            }
+                        }
+                    }
                 }
 
                 // 2. Horizontal Scroll Row
                 if state.trendingVideos.count > 5 {
-                    SectionHeader(icon: "rectangle.stack.fill", title: "Rekomendasi Cepat")
+                    SectionHeader(icon: "rectangle.stack.fill", title: "Reccomendation")
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 20) {
                             ForEach(state.trendingVideos.prefix(5).dropFirst()) { video in
@@ -281,7 +322,7 @@ struct HomeView: View {
 
                 // 3. Grid Layout
                 if state.trendingVideos.count > 6 {
-                    SectionHeader(icon: "square.grid.3x3.fill", title: "Jelajahi Semua")
+                    SectionHeader(icon: "square.grid.3x3.fill", title: "Explore All")
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 20) {
                         ForEach(state.trendingVideos.dropFirst(6)) { video in
                             VideoCard(
