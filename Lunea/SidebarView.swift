@@ -196,14 +196,8 @@ struct SidebarView: View {
                 }
                 .padding(.horizontal, isCollapsed ? 8 : 14)
                 .padding(.vertical, isCollapsed ? 10 : 12)
-                .background {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white.opacity(0.04))
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
-                }
+                .glassEffect()
+               
             }
             .buttonStyle(.plain)
             .padding(.horizontal, isCollapsed ? 10 : 16)

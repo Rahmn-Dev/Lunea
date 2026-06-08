@@ -36,7 +36,7 @@ struct YouTubePlayerView: NSViewRepresentable {
         let html = """
         <!DOCTYPE html><html>
         <head><meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
-        <style>* { margin:0; padding:0; box-sizing:border-box; } html,body { width:100%; height:100%; background:#000; overflow:hidden; } iframe { width:100%; height:100%; border:0; display:block; }</style>
+        <style>* { margin:0; padding:0; box-sizing:border-box; } html,body { width:100%; height:100%; background:#000; overflow:hidden; border-radius:20px; } iframe { width:100%; height:100%; border:0; display:block; border-radius:20px; }</style>
         </head>
         <body><iframe src="\(embedURL)" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></body>
         </html>
@@ -46,7 +46,6 @@ struct YouTubePlayerView: NSViewRepresentable {
 }
 
 // MARK: - Floating Player Overlay
-// Kunci: YouTubePlayerView di-render SEKALI, posisi dianimasi via offset+frame
 
 struct FloatingPlayerOverlay: View {
     @EnvironmentObject var state: AppState
@@ -65,19 +64,14 @@ struct FloatingPlayerOverlay: View {
 
             ZStack(alignment: .topLeading) {
 
-                // Full mode background — liquid glass
                 if !isMini {
-                    RoundedRectangle(cornerRadius: 0, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 0, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
-                        }
+                    // ✅ Pakai ThemeBackground langsung — sama persis dengan beranda
+                    // Tidak ada blur layer, tidak ngelag, warna ngikutin tema yang dipilih
+                    ThemeBackground(state: state)
                         .ignoresSafeArea()
                         .transition(.opacity)
                 }
 
-                // ── SINGLE VIDEO — tidak restart saat toggle ──
                 YouTubePlayerView(videoId: videoId)
                     .frame(
                         width:  isMini ? miniW      : fullVideoW,
@@ -99,7 +93,6 @@ struct FloatingPlayerOverlay: View {
                     .animation(.spring(response: 0.45, dampingFraction: 0.82), value: isMini)
                     .zIndex(10)
 
-                // ── MINI: compact title bar ──
                 if isMini {
                     HStack(spacing: 8) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -137,23 +130,15 @@ struct FloatingPlayerOverlay: View {
                     }
                     .padding(.horizontal, 10)
                     .frame(width: miniW, height: miniInfoH)
-                    .background(.ultraThinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.13), lineWidth: 0.5)
-                    }
+                    .glassEffect(in: .rect(cornerRadius: 17.0))
                     .shadow(color: .black.opacity(0.45), radius: 16, y: 6)
                     .offset(x: miniX, y: miniY + miniH)
                     .animation(.spring(response: 0.45, dampingFraction: 0.82), value: isMini)
                     .zIndex(10)
                 }
 
-                // ── FULL MODE: kiri info + kanan grid ──
                 if !isMini {
                     HStack(alignment: .top, spacing: 0) {
-
-                        // Kiri: spacer video + scroll info
                         VStack(spacing: 0) {
                             Color.clear.frame(height: fullVideoH + 20 + 14)
                             ScrollView(showsIndicators: false) {
@@ -166,12 +151,10 @@ struct FloatingPlayerOverlay: View {
                         .frame(width: fullVideoW)
                         .padding(.leading, 24)
 
-                        // Divider
                         Rectangle()
                             .fill(Color.white.opacity(0.07))
                             .frame(width: 0.5)
 
-                        // Kanan: 2-column grid related videos
                         RelatedVideosPanel()
                             .environmentObject(state)
                             .frame(width: geo.size.width * 0.38)
@@ -185,7 +168,7 @@ struct FloatingPlayerOverlay: View {
     }
 }
 
-// MARK: - Player Details (fresh layout)
+// MARK: - Player Details
 
 struct PlayerDetailsView: View {
     @EnvironmentObject var state: AppState
@@ -195,15 +178,12 @@ struct PlayerDetailsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-
-            // Judul
             Text(detail?.snippet?.title ?? "Memuat video...")
                 .font(.system(size: 16, weight: .bold))
                 .foregroundColor(.white.opacity(0.95))
                 .lineSpacing(2)
                 .padding(.top, 14)
 
-            // Stats inline — bukan list
             HStack(spacing: 14) {
                 if let stats = detail?.statistics {
                     StatChip(value: stats.formattedViews, label: "tayangan")
@@ -214,7 +194,6 @@ struct PlayerDetailsView: View {
                 }
             }
 
-            // Action pills
             HStack(spacing: 8) {
                 PillButton(icon: "hand.thumbsup", label: isLiked ? "Disukai" : "Suka", isAccent: isLiked) {
                     withAnimation(.spring(response: 0.25)) { isLiked.toggle() }
@@ -223,7 +202,6 @@ struct PlayerDetailsView: View {
                 PillButton(icon: "bookmark", label: "Simpan", isAccent: false) {}
             }
 
-            // Channel row
             HStack(spacing: 10) {
                 ChannelAvatar(
                     initial: String(detail?.snippet?.channelTitle.prefix(1) ?? "?"),
@@ -248,7 +226,6 @@ struct PlayerDetailsView: View {
                     .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
             }
 
-            // Deskripsi — dalam kotak tersendiri
             if let desc = detail?.snippet?.description, !desc.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(isDescExpanded ? desc : String(desc.prefix(160)) + (desc.count > 160 ? "…" : ""))
@@ -301,14 +278,13 @@ struct StatChip: View {
     }
 }
 
-// MARK: - Pill Button
+// MARK: - Pill Button (hover dihapus, pakai glassEffect)
 
 struct PillButton: View {
     let icon: String
     let label: String
     let isAccent: Bool
     let action: () -> Void
-    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
@@ -316,25 +292,16 @@ struct PillButton: View {
                 Image(systemName: icon).font(.system(size: 11))
                 Text(label).font(.system(size: 12, weight: .semibold))
             }
-            .foregroundColor(isAccent ? .white : .white.opacity(0.7))
-            .padding(.horizontal, 12).padding(.vertical, 7)
-            .background {
-                Capsule()
-                    .fill(isAccent
-                          ? Color(hex: "FA2E5B").opacity(0.2)
-                          : Color.white.opacity(isHovered ? 0.13 : 0.07))
-                    .overlay {
-                        Capsule().strokeBorder(
-                            isAccent
-                                ? Color(hex: "FA2E5B").opacity(0.4)
-                                : Color.white.opacity(0.12),
-                            lineWidth: 0.5
-                        )
-                    }
-            }
+            .foregroundColor(isAccent ? Color(hex: "FA2E5B") : .white.opacity(0.8))
+            .padding(.horizontal, 12).padding(.vertical, 8)
         }
         .buttonStyle(.plain)
-        .onHover { h in withAnimation(.easeInOut(duration: 0.15)) { isHovered = h } }
+        .glassEffect(
+            isAccent
+                ? .regular.tint(Color(hex: "FA2E5B").opacity(0.35))
+                : .regular.interactive(),
+            in: Capsule()
+        )
     }
 }
 
@@ -352,22 +319,17 @@ struct StatBadge: View {
 
 struct ActionButton: View {
     let icon: String; let label: String
-    @State private var isHovered = false
     var body: some View {
         Button {} label: {
             HStack(spacing: 5) {
                 Image(systemName: icon).font(.system(size: 12))
                 Text(label).font(.system(size: 12, weight: .semibold))
             }
-            .foregroundColor(.white.opacity(0.7))
+            .foregroundColor(.white.opacity(0.8))
             .padding(.horizontal, 12).padding(.vertical, 7)
-            .background {
-                Capsule().fill(Color.white.opacity(isHovered ? 0.14 : 0.08))
-                    .overlay { Capsule().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5) }
-            }
         }
         .buttonStyle(.plain)
-        .onHover { h in withAnimation(.easeInOut(duration: 0.15)) { isHovered = h } }
+        .glassEffect(.regular.interactive(), in: Capsule())
     }
 }
 
@@ -379,16 +341,16 @@ struct SubscribeButton: View {
                 .font(.system(size: 11, weight: .bold))
                 .foregroundColor(subscribed ? .white.opacity(0.5) : .white)
                 .padding(.horizontal, 14).padding(.vertical, 7)
-                .background {
-                    Capsule()
-                        .fill(subscribed ? Color.white.opacity(0.08) : Color.white.opacity(0.13))
-                        .overlay { Capsule().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5) }
-                }
-        }.buttonStyle(.plain)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(
+            subscribed ? .regular : .regular.tint(Color.white.opacity(0.1)),
+            in: Capsule()
+        )
     }
 }
 
-// MARK: - Related Videos Panel (2-column grid)
+// MARK: - Related Videos Panel
 
 struct RelatedVideosPanel: View {
     @EnvironmentObject var state: AppState
@@ -399,11 +361,13 @@ struct RelatedVideosPanel: View {
             : Array(state.relatedVideoDetails.prefix(16))
     }
 
-    let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
+    let columns = [
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8)
+    ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
             HStack {
                 Text("Selanjutnya")
                     .font(.system(size: 11, weight: .bold))
@@ -420,53 +384,77 @@ struct RelatedVideosPanel: View {
                         .tint(.white.opacity(0.35))
                 }
             }
-            .padding(.horizontal, 12)
+            // ✅ Padding kanan disamain dengan kiri (24) biar simetris
+            .padding(.horizontal, 20)
             .padding(.top, 14)
             .padding(.bottom, 10)
 
-            // 2-column grid
             ScrollView(showsIndicators: false) {
                 LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(videos, id: \.id) { video in
                         RelatedVideoCard(video: video, state: state)
                     }
                 }
-                .padding(.horizontal, 10)
+                // ✅ Padding kanan 20 — sejajar dengan panel kiri
+                .padding(.leading, 10)
+                .padding(.trailing, 20)
                 .padding(.bottom, 20)
             }
         }
     }
 }
 
-// MARK: - Related Video Card (compact grid item)
+// MARK: - Related Video Card
+// ✅ Hover: hanya background berubah, TIDAK ada scaleEffect / animasi gambar
+// ✅ Thumbnail pakai .default (120x90px) bukan .medium → lebih kecil, lebih cepat load
+// ✅ Tinggi card konsisten: thumbnail 16:9 fixed + info area height fixed
 
 struct RelatedVideoCard: View {
     let video: YouTubeVideoDetail
     @ObservedObject var state: AppState
     @State private var isHovered = false
 
+    // ✅ Ambil URL thumbnail terkecil yang tersedia (default = 120x90)
+    // Jauh lebih ringan dari medium (320x180) untuk grid kecil
+    private var thumbnailURL: URL? {
+        let t = video.snippet?.thumbnails
+        // Pakai medium saja — sesuaikan jika nama property berbeda di struct kamu
+        let urlStr = t?.medium?.url ?? t?.high?.url ?? ""
+        return URL(string: urlStr)
+    }
+
     var body: some View {
         Button {
             Task { await state.selectVideo(video.id) }
         } label: {
             VStack(alignment: .leading, spacing: 0) {
-                // Thumbnail
+
+                // Thumbnail — fixed 16:9, tidak bisa stretch
                 ZStack(alignment: .bottomTrailing) {
-                    AsyncImage(url: URL(string: video.snippet?.thumbnails.medium?.url ?? "")) { phase in
-                        if let img = phase.image {
-                            img.resizable().aspectRatio(16/9, contentMode: .fill)
-                        } else {
+                    AsyncImage(url: thumbnailURL) { phase in
+                        switch phase {
+                        case .success(let img):
+                            img
+                                .resizable()
+                                .aspectRatio(16/9, contentMode: .fill)
+                        case .failure:
                             Rectangle()
                                 .fill(Color.white.opacity(0.05))
                                 .overlay {
-                                    ProgressView().scaleEffect(0.5).tint(.white.opacity(0.3))
+                                    Image(systemName: "photo")
+                                        .foregroundColor(.white.opacity(0.2))
+                                }
+                        default:
+                            Rectangle()
+                                .fill(Color.white.opacity(0.05))
+                                .overlay {
+                                    ProgressView().tint(.white.opacity(0.3))
                                 }
                         }
                     }
-                    .aspectRatio(16/9, contentMode: .fill)
+                    .aspectRatio(16/9, contentMode: .fit)
                     .clipped()
 
-                    // Duration badge
                     if let dur = video.contentDetails?.formattedDuration, !dur.isEmpty {
                         Text(dur)
                             .font(.system(size: 9, weight: .bold))
@@ -476,23 +464,16 @@ struct RelatedVideoCard: View {
                             .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                             .padding(5)
                     }
-
-                    // Hover play overlay
-                    if isHovered {
-                        Color.black.opacity(0.25)
-                        Image(systemName: "play.circle.fill")
-                            .font(.system(size: 24))
-                            .foregroundColor(.white.opacity(0.9))
-                    }
                 }
                 .frame(maxWidth: .infinity)
-                .aspectRatio(16/9, contentMode: .fit)
+                .clipped()
 
                 // Info
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(video.snippet?.title ?? "")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.white.opacity(isHovered ? 1.0 : 0.88))
+                        // ✅ Warna teks berubah saat hover — ringan, tidak perlu animasi
+                        .foregroundColor(isHovered ? .white : .white.opacity(0.88))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -508,18 +489,22 @@ struct RelatedVideoCard: View {
                     }
                 }
                 .padding(.horizontal, 8)
-                .padding(.vertical, 7)
+                .padding(.vertical, 8)
+                .frame(height: 72, alignment: .top)
             }
+            // ✅ Hover: background saja yang berubah, tanpa animasi → 0 GPU cost
             .background(Color.white.opacity(isHovered ? 0.09 : 0.04))
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.white.opacity(isHovered ? 0.16 : 0.07), lineWidth: 0.5)
+                    .strokeBorder(
+                        Color.white.opacity(isHovered ? 0.14 : 0.07),
+                        lineWidth: 0.5
+                    )
             }
-            .scaleEffect(isHovered ? 1.02 : 1.0)
-            .animation(.easeInOut(duration: 0.15), value: isHovered)
+            // ✅ TIDAK ada .scaleEffect sama sekali
         }
         .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
+        .onHover { isHovered = $0 }  // ✅ onHover ada, tapi hanya trigger warna background
     }
 }

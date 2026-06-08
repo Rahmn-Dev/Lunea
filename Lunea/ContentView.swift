@@ -3,11 +3,37 @@ import Combine
 
 // MARK: - Root
 
+struct GlassCapsule: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(.ultraThinMaterial)
+            .clipShape(Capsule())
+            .overlay {
+                Capsule()
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                .white.opacity(0.35),
+                                .white.opacity(0.05)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+            }
+    }
+}
+
+extension View {
+    func glassCapsule() -> some View {
+        modifier(GlassCapsule())
+    }
+}
+
 struct ContentView: View {
     @StateObject private var state = AppState()
     @State private var selectedTab: Tab = .home
-    
-    // 🔥 TAMBAHAN BARU: Mengatur status collapse sidebar
     @State private var isSidebarCollapsed = false
 
     enum Tab: String, Equatable {
@@ -20,9 +46,9 @@ struct ContentView: View {
             ThemeBackground(state: state)
 
             HStack(spacing: 16) {
-                // KIRI: Sidebar (Lebar dinamis: 75 vs 250)
+                // KIRI: Sidebar
                 SidebarView(state: state, selectedTab: $selectedTab, isCollapsed: $isSidebarCollapsed)
-                    .frame(width: isSidebarCollapsed ? 75 : 250) // 🔥 KUNCI ANIMASI LEBAR
+                    .frame(width: isSidebarCollapsed ? 75 : 250)
                     .background(.ultraThinMaterial)
                     .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                     .overlay {
@@ -33,41 +59,55 @@ struct ContentView: View {
                     .padding(.vertical, 16)
                     .padding(.leading, 16)
                     .environment(\.colorScheme, .dark)
-                    // Berikan efek animasi pegas saat lebar sidebar berubah
                     .animation(.spring(response: 0.35, dampingFraction: 0.82), value: isSidebarCollapsed)
 
                 // KANAN: Main Content
                 VStack(spacing: 0) {
-                    TopBar(state: state)
-                        .frame(height: 60)
+                    ZStack(alignment: .top) {  // ← alignment .top, floating di atas
 
-                    // Main View Area
-                    ZStack {
-                        if state.isSearchActive {
-                            SearchResultsView(state: state)
-                                .transition(.opacity)
-                        } else {
-                            HomeView(state: state, selectedTab: selectedTab)
-                                .transition(.opacity)
+                        // Layer 1: Konten utama
+                        ZStack {
+                            if state.isSearchActive {
+                                SearchResultsView(state: state)
+                                    .transition(.opacity)
+                            } else {
+                                HomeView(state: state, selectedTab: selectedTab)
+                                    .transition(.opacity)
+                            }
+
+                            if state.isShowingPlayer, let vid = state.selectedVideoId {
+                                FloatingPlayerOverlay(videoId: vid)
+                                    .environmentObject(state)
+                                    .id(vid)
+                            }
+                        }
+                        .animation(.easeInOut(duration: 0.3), value: state.isShowingPlayer)
+                        .animation(.easeInOut(duration: 0.3), value: state.isSearchActive)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        // Padding atas agar konten tidak tertutup TopBar + kategori
+                        .safeAreaInset(edge: .top) {
+                            Color.clear.frame(height: 120)
                         }
 
-                        if state.isShowingPlayer, let vid = state.selectedVideoId {
-                            FloatingPlayerOverlay(videoId: vid)
-                                .environmentObject(state)
-                                .id(vid)
+                        // Layer 2: TopBar + kategori floating di atas
+                        VStack(spacing: 8) {
+                            TopBar(state: state)
+                                .padding(.horizontal, 20)
+                                .padding(.top, 16)
+
+                            // Kategori floating — hanya muncul kalau tidak search
+                            if !state.isSearchActive {
+                                CategoryBar(state: state)
+                                    .padding(.horizontal, 20)
+                                    .padding(.bottom, 4)
+                            }
                         }
                     }
-                    .animation(.easeInOut(duration: 0.3), value: state.isShowingPlayer)
-                    .animation(.easeInOut(duration: 0.3), value: state.isSearchActive)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.8)
-                }
-                .shadow(color: .black.opacity(0.3), radius: 20, y: 10)
+                .glassEffect(
+                    .regular,
+                    in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+                )
                 .padding(.vertical, 16)
                 .padding(.trailing, 16)
             }
@@ -83,101 +123,180 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Top Bar (Super Clean)
+// MARK: - Top Bar
 
 struct TopBar: View {
     @ObservedObject var state: AppState
     @FocusState private var isSearchFocused: Bool
+    @State private var isSearchHovered = false
+
+    var body: some View {
+        GlassEffectContainer(spacing: 8) {
+            HStack(spacing: 8) {
+
+                if state.isShowingPlayer && !state.isPlayerMinimized {
+                    SearchBarButton(icon: "chevron.down") {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            state.isPlayerMinimized = true
+                        }
+                    }
+                } else if state.isSearchActive {
+                    SearchBarButton(icon: "chevron.left") {
+                        withAnimation { state.clearSearch() }
+                    }
+                }
+
+                // Search bar pill — klik di mana saja = focus TextField
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(
+                            isSearchFocused
+                                ? state.currentTheme.accentColor
+                                : (isSearchHovered ? Color.primary : Color.secondary)
+                        )
+
+                    TextField("Find Videos...", text: $state.searchQuery)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 15, weight: .medium))
+                        .focused($isSearchFocused)
+                        .onSubmit { Task { await state.search() } }
+
+                    if !state.searchQuery.isEmpty {
+                        Button {
+                            state.searchQuery = ""
+                            isSearchFocused = true
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 15))
+                                .foregroundStyle(isSearchHovered ? Color.primary : Color.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .transition(.scale.combined(with: .opacity))
+                    }
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 14)
+                .frame(width: isSearchFocused ? 520 : 400)
+                // ✅ Tap di mana saja dalam capsule → focus ke TextField
+                .contentShape(Capsule())
+                .onTapGesture { isSearchFocused = true }
+                .glassEffect(
+                    isSearchFocused
+                        ? .regular.interactive().tint(state.currentTheme.accentColor.opacity(0.3))
+                        : isSearchHovered
+                            ? .regular.interactive().tint(Color.white.opacity(0.12))
+                            : .regular.interactive(),
+                    in: Capsule()
+                )
+                .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isSearchFocused)
+                .onHover { hovered in
+                    isSearchHovered = hovered
+                    if hovered { NSCursor.iBeam.push() } else { NSCursor.pop() }
+                }
+
+                SearchBarButton(icon: "key.fill") {
+                    state.showApiKeySheet = true
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Category Bar (floating, liquid glass pills)
+
+// MARK: - Category Chip (satu pill, punya hover sendiri)
+
+struct CategoryChip: View {
+    @ObservedObject var state: AppState
+    let cat: String
+    @State private var isHovered = false
+
+    var isSelected: Bool { state.selectedCategory == cat }
+
+    var body: some View {
+        // ✅ Button di luar glassEffect — hit area = seluruh capsule, bukan cuma teks
+        Button {
+            state.selectedCategory = cat
+            Task { await state.loadHome() }
+        } label: {
+            Text(cat)
+                .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                .foregroundStyle(
+                    isSelected
+                        ? state.currentTheme.accentColor
+                        : (isHovered ? Color.primary : Color.secondary)
+                )
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                // ✅ contentShape Capsule = seluruh area pill bisa diklik & di-hover
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        // ✅ glassEffect di luar button — jadi background, hit area tetap penuh
+        .glassEffect(
+            isSelected
+                ? .regular.interactive().tint(state.currentTheme.accentColor.opacity(0.35))
+                : isHovered
+                    ? .regular.interactive().tint(Color.white.opacity(0.12))
+                    : .regular.interactive(),
+            in: Capsule()
+        )
+        .onHover { hovered in
+            isHovered = hovered
+            if hovered { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
+    }
+}
+
+struct CategoryBar: View {
+    @ObservedObject var state: AppState
+
+    var body: some View {
+        GeometryReader { geo in
+            ScrollView(.horizontal, showsIndicators: false) {
+                GlassEffectContainer(spacing: 8) {
+                    HStack(spacing: 8) {
+                        ForEach(state.categories, id: \.self) { cat in
+                            CategoryChip(state: state, cat: cat)
+                        }
+                    }
+                    .frame(minWidth: geo.size.width, alignment: .center)
+                }
+                .frame(minWidth: geo.size.width, alignment: .center)
+            }
+        }
+        .frame(height: 44)
+    }
+}
+
+// MARK: - Search Bar Button
+
+struct SearchBarButton: View {
+    let icon: String
+    let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: 16) {
-            
-            if state.isShowingPlayer && !state.isPlayerMinimized {
-                HeaderButton(icon: "chevron.down") {
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                        state.isPlayerMinimized = true
-                    }
-                }
-            } else if state.isSearchActive { // 🔥 Mengacu pada isSearchActive
-                HeaderButton(icon: "chevron.left") {
-                    withAnimation { state.clearSearch() }
-                }
-            } else {
-                Spacer().frame(width: 36)
-            }
-
-            Spacer()
-
-            // Search bar — VisionOS Style
-            HStack(spacing: 10) {
-                // KUNCI FIX: Ikon pencarian menjadi Button agar bisa diklik manual
-                Button {
-                    Task { await state.search() }
-                } label: {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(isSearchFocused ? state.currentTheme.accentColor : .white.opacity(0.5))
-                }
-                .buttonStyle(.plain)
-
-                TextField("Find Videos...", text: $state.searchQuery)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.white.opacity(0.95))
-                    .focused($isSearchFocused)
-                    .onSubmit { Task { await state.search() } } // Enter sekarang bebas bekerja!
-
-                if !state.searchQuery.isEmpty {
-                    Button {
-                        state.searchQuery = "" // Jangan matikan mode pencarian, hanya kosongkan teks
-                        isSearchFocused = true
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 14))
-                            .foregroundColor(.white.opacity(0.4))
-                    }
-                    .buttonStyle(.plain)
-                    .transition(.scale.combined(with: .opacity))
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .frame(width: isSearchFocused ? 480 : 380)
-            .background {
-                RoundedRectangle(cornerRadius: 19, style: .continuous)
-                    .fill(Color.white.opacity(isSearchFocused ? 0.08 : (isHovered ? 0.06 : 0.04)))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 19, style: .continuous)
-                    .strokeBorder(
-                        isSearchFocused ? state.currentTheme.accentColor.opacity(0.6) : Color.white.opacity(0.1),
-                        lineWidth: isSearchFocused ? 1.5 : 0.5
-                    )
-            }
-            .shadow(color: isSearchFocused ? state.currentTheme.accentColor.opacity(0.15) : .clear, radius: 12)
-            // KUNCI FIX: .onTapGesture dihilangkan dari sini agar 'Enter' tidak diblokir!
-            .onHover { isHovered = $0 }
-            .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isSearchFocused)
-            .animation(.easeInOut(duration: 0.2), value: isHovered)
-
-            Spacer()
-
-            HeaderButton(icon: "key.fill") {
-                state.showApiKeySheet = true
-            }
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(isHovered ? Color.primary : Color.secondary)
+                .frame(width: 50, height: 50)
+                // ✅ contentShape = hit area penuh circle, bukan cuma ikon
+                .contentShape(Circle())
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 12)
-        .background {
-            VStack {
-                Spacer()
-                LinearGradient(
-                    colors: [Color.white.opacity(0.0), Color.white.opacity(0.08), Color.white.opacity(0.0)],
-                    startPoint: .leading, endPoint: .trailing
-                )
-                .frame(height: 1)
-            }
+        .buttonStyle(.plain)
+        // ✅ glassEffect SATU kali di luar button — tidak double layer
+        .glassEffect(
+            isHovered
+                ? .regular.interactive().tint(Color.white.opacity(0.15))
+                : .regular.interactive(),
+            in: Circle()
+        )
+        .onHover { hovered in
+            isHovered = hovered
+            if hovered { NSCursor.pointingHand.push() } else { NSCursor.pop() }
         }
     }
 }
@@ -208,30 +327,21 @@ struct TLButton: View {
 struct HeaderButton: View {
     let icon: String
     let action: () -> Void
-    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .bold))
-                .foregroundColor(isHovered ? .white : .white.opacity(0.7))
+                .foregroundStyle(.primary)
                 .frame(width: 36, height: 36)
-                .background {
-                    Circle()
-                        .fill(Color.white.opacity(isHovered ? 0.15 : 0.08))
-                        .shadow(color: isHovered ? .black.opacity(0.2) : .clear, radius: 4)
-                }
-                .overlay {
-                    Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5)
-                }
         }
         .buttonStyle(.plain)
-        .scaleEffect(isHovered ? 1.05 : 1.0)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
-        .onHover { isHovered = $0 }
+        .glassEffect(.regular.interactive(), in: Circle())
     }
 }
+
 // MARK: - Home View
+// Kategori DIHAPUS dari sini karena sudah floating di atas
 
 struct HomeView: View {
     @ObservedObject var state: AppState
@@ -242,58 +352,33 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 30) {
-                
-                // 🔥 KATEGORI DISINI: Kembali muncul & di-center
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        Spacer() // Dorong ke tengah
-                        ForEach(state.categories, id: \.self) { cat in
-                            GlassChip(state: state, label: cat, isSelected: state.selectedCategory == cat) {
-                                state.selectedCategory = cat
-                                Task { await state.loadHome() }
-                            }
-                        }
-                        Spacer() // Dorong ke tengah
-                    }
-                    .frame(minWidth: 1100) // Sesuai permintaanmu
-                }
-                .padding(.vertical, 8)
 
-                // 1. Hero Card
-                // 1. Carousel Hero (macOS Compatible)
-                // 1. Carousel Hero (dengan Autoscroll 3 detik)
-                // 1. Carousel Hero (Peek-a-boo style)
+                // Hero Carousel
                 if !state.trendingVideos.isEmpty {
                     let items = Array(state.trendingVideos.prefix(5))
-                    
-                    // Timer autoscroll 3 detik
                     let timer = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
-                    
+
                     ScrollViewReader { proxy in
                         ScrollView(.horizontal, showsIndicators: false) {
-                            LazyHStack(spacing: 20) { // Jarak antar kartu
+                            LazyHStack(spacing: 20) {
                                 ForEach(0..<items.count, id: \.self) { index in
                                     HeroFeaturedCard(
                                         state: state,
                                         video: items[index],
                                         action: { Task { await state.selectVideo(items[index].id) } }
                                     )
-                                    // PENTING: Lebar kartu dibuat dinamis agar kartu kiri/kanan bisa intip
-                                    // count: 1 berarti full width, tapi di-inset oleh contentMargins
                                     .containerRelativeFrame(.horizontal, count: 1, spacing: 20)
                                     .clipShape(RoundedRectangle(cornerRadius: 35, style: .continuous))
                                     .id(index)
                                 }
                             }
-                            .scrollTargetLayout() // Agar scroll bisa "snap" ke kartu
+                            .scrollTargetLayout()
                         }
-                        .scrollTargetBehavior(.viewAligned) // Efek "nempel" pas di tengah
-                        // INI RAHASIANYA: contentMargins membuat kartu di pinggir terlihat
+                        .scrollTargetBehavior(.viewAligned)
                         .contentMargins(.horizontal, 80, for: .scrollContent)
                         .frame(height: 370)
                         .onReceive(timer) { _ in
                             withAnimation(.easeInOut(duration: 0.8)) {
-                                // Logika pindah ke kanan otomatis
                                 let nextIndex = (currentIndex + 1) % items.count
                                 currentIndex = nextIndex
                                 proxy.scrollTo(nextIndex, anchor: .center)
@@ -302,7 +387,7 @@ struct HomeView: View {
                     }
                 }
 
-                // 2. Horizontal Scroll Row
+                // Recommendation Row
                 if state.trendingVideos.count > 5 {
                     SectionHeader(icon: "rectangle.stack.fill", title: "Reccomendation")
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -313,27 +398,25 @@ struct HomeView: View {
                                     action: { Task { await state.selectVideo(video.id) } }
                                 )
                                 .frame(width: 280)
-                                // 🔥 HAPUS .onTapGesture di sini!
                             }
                         }
                         .padding(.horizontal, 24)
                     }
                 }
 
-                // 3. Grid Layout
+                // Explore Grid
                 if state.trendingVideos.count > 6 {
                     SectionHeader(icon: "square.grid.3x3.fill", title: "Explore All")
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 20) {
                         ForEach(state.trendingVideos.dropFirst(6)) { video in
                             VideoCard(
                                 state: state, video: video,
-                                    action: { Task { await state.selectVideo(video.id) } }
-                                )
+                                action: { Task { await state.selectVideo(video.id) } }
+                            )
                         }
                     }
                 }
 
-                // Trigger Infinite Scroll
                 Color.clear.onAppear {
                     Task { await state.loadMore() }
                 }
@@ -354,7 +437,6 @@ struct SearchResultsView: View {
                 SectionHeader(icon: "magnifyingglass", title: "\"\(state.searchQuery)\"")
                     .padding(.bottom, 4)
 
-                // 🔥 LOGIKA TAMPILAN SEARCH DIPERBAIKI
                 if state.isSearching {
                     HStack { Spacer(); ProgressView().scaleEffect(1.4).tint(state.currentTheme.accentColor); Spacer() }
                         .padding(.top, 80)
