@@ -35,7 +35,7 @@ extension View {
 struct ContentView: View {
     @StateObject private var state = AppState()
     @State private var selectedTab: Tab = .home
-    @State private var isSidebarCollapsed = false
+    @State private var isSidebarCollapsed = true
     @State private var isVideoFullscreen = false
 
     enum Tab: String, Equatable {
@@ -45,7 +45,7 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            ThemeBackground(state: state)
+            AmbientVideoBackdrop(state: state)
 
             VStack(spacing: 0) {
                 if !isVideoFullscreen {
@@ -64,21 +64,20 @@ struct ContentView: View {
                             selectedTab: $selectedTab,
                             isCollapsed: $isSidebarCollapsed
                         )
-                        .frame(width: isSidebarCollapsed ? 82 : 238)
+                        .frame(width: isSidebarCollapsed ? 76 : 228)
+                        .background(Color.black.opacity(0.12), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.7)
+                        }
+                        .padding(.leading, 14)
+                        .padding(.trailing, 10)
+                        .padding(.bottom, 14)
                         .transition(.move(edge: .leading).combined(with: .opacity))
                     }
 
-                    ZStack(alignment: .top) {
-                        workspaceContent
-
-                        if !state.isSearchActive && (!state.isShowingPlayer || state.isPlayerMinimized) {
-                            CategoryBar(state: state)
-                                .padding(.horizontal, 24)
-                                .padding(.top, 18)
-                                .transition(.move(edge: .top).combined(with: .opacity))
-                        }
-                    }
-                    .background(Color.black.opacity(0.16))
+                    workspaceContent
+                    .background(Color.black.opacity(0.18))
                     .clipShape(RoundedRectangle(cornerRadius: isVideoFullscreen ? 0 : 22, style: .continuous))
                     .overlay {
                         RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -115,10 +114,6 @@ struct ContentView: View {
                     HomeView(state: state, selectedTab: selectedTab)
                 }
             }
-            .padding(
-                .top,
-                !state.isSearchActive && (!state.isShowingPlayer || state.isPlayerMinimized) ? 70 : 0
-            )
             .transition(.opacity)
 
             if state.isShowingPlayer, let videoId = state.selectedVideoId {
@@ -166,14 +161,36 @@ struct WindowTitleBar: View {
                 .buttonStyle(.plain)
                 .help(isSidebarCollapsed ? "Show sidebar" : "Hide sidebar")
 
-                HStack(spacing: 9) {
-                    Image(systemName: "play.square.stack.fill")
-                        .foregroundStyle(state.currentTheme.accentColor)
+                HStack(spacing: 8) {
+                    Image("LuneaMark")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 27, height: 27)
+                        .shadow(color: Color(hex: "E7B94A").opacity(0.32), radius: 7, y: 2)
                     Text("Lunea")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.9))
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .tracking(0.25)
+                        .foregroundStyle(.white.opacity(0.94))
                 }
-                .frame(width: 110, alignment: .leading)
+                .padding(.leading, 8)
+                .padding(.trailing, 13)
+                .frame(height: 38)
+                .background {
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                        .overlay(Color.white.opacity(0.035), in: Capsule())
+                }
+                .overlay {
+                    Capsule().strokeBorder(
+                        LinearGradient(
+                            colors: [Color(hex: "F6D77A").opacity(0.30), .white.opacity(0.07)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.8
+                    )
+                }
+                .shadow(color: Color.black.opacity(0.18), radius: 10, y: 4)
 
                 Spacer(minLength: 18)
 
@@ -242,14 +259,81 @@ struct WindowTitleBar: View {
 
                 Spacer(minLength: 18)
 
-                Text(state.apiKey.isEmpty ? "Setup required" : "Ready to play")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.45))
-                    .frame(width: 110, alignment: .trailing)
+                HStack(spacing: 9) {
+                    TitleBarGlassButton(
+                        icon: "bell.fill",
+                        help: "Notifications",
+                        accent: state.currentTheme.accentColor,
+                        showsBadge: true
+                    ) { }
+
+                    TitleBarGlassButton(
+                        icon: "person.fill",
+                        help: "Profile",
+                        accent: state.currentTheme.accentColor,
+                        isProfile: true
+                    ) { }
+                }
+                .frame(width: 92, alignment: .trailing)
             }
             .padding(.horizontal, 18)
         }
         .environment(\.colorScheme, .dark)
+    }
+}
+
+struct TitleBarGlassButton: View {
+    let icon: String
+    let help: String
+    let accent: Color
+    var showsBadge = false
+    var isProfile = false
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            ZStack(alignment: .topTrailing) {
+                Circle()
+                    .fill(isProfile ? accent.opacity(0.20) : Color.white.opacity(isHovered ? 0.13 : 0.075))
+                    .overlay {
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                            .opacity(isProfile ? 0.26 : 0.42)
+                    }
+                    .overlay {
+                        Circle().strokeBorder(
+                            LinearGradient(
+                                colors: [.white.opacity(0.28), .white.opacity(0.06)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 0.8
+                        )
+                    }
+                    .shadow(color: accent.opacity(isHovered ? 0.20 : 0.07), radius: 10, y: 3)
+
+                Image(systemName: icon)
+                    .font(.system(size: isProfile ? 15 : 14, weight: .semibold))
+                    .foregroundStyle(isProfile ? accent : Color.white.opacity(isHovered ? 0.96 : 0.78))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if showsBadge {
+                    Circle()
+                        .fill(accent)
+                        .frame(width: 7, height: 7)
+                        .overlay { Circle().stroke(Color.black.opacity(0.55), lineWidth: 1) }
+                        .offset(x: -1, y: 1)
+                }
+            }
+            .frame(width: isProfile ? 38 : 36, height: isProfile ? 38 : 36)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(isHovered ? 1.055 : 1)
+        .animation(.easeOut(duration: 0.15), value: isHovered)
+        .onHover { isHovered = $0 }
+        .help(help)
     }
 }
 
@@ -289,8 +373,8 @@ struct CategoryChip: View {
                 .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
                 .foregroundStyle(
                     isSelected
-                        ? state.currentTheme.accentColor
-                        : (isHovered ? Color.primary : Color.secondary)
+                        ? Color.black.opacity(0.86)
+                        : (isHovered ? Color.white : Color.white.opacity(0.74))
                 )
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
@@ -300,16 +384,23 @@ struct CategoryChip: View {
         .buttonStyle(.plain)
         .background(
             isSelected
-                ? state.currentTheme.accentColor.opacity(0.22)
-                : Color.white.opacity(isHovered ? 0.09 : 0.045),
+                ? Color.white.opacity(0.94)
+                : (isHovered ? state.currentTheme.accentColor.opacity(0.24) : Color.white.opacity(0.075)),
             in: Capsule()
         )
         .overlay {
             Capsule().strokeBorder(
-                isSelected ? state.currentTheme.accentColor.opacity(0.55) : Color.white.opacity(0.08),
+                isSelected ? Color.white.opacity(0.75) : Color.white.opacity(isHovered ? 0.24 : 0.12),
                 lineWidth: 0.7
             )
         }
+        .shadow(
+            color: isSelected ? Color.white.opacity(0.13) : state.currentTheme.accentColor.opacity(isHovered ? 0.18 : 0),
+            radius: 10
+        )
+        .scaleEffect(isHovered && !isSelected ? 1.035 : 1)
+        .animation(.easeOut(duration: 0.14), value: isHovered)
+        .animation(.easeOut(duration: 0.18), value: isSelected)
         .onHover { hovered in
             isHovered = hovered
             if hovered { NSCursor.pointingHand.push() } else { NSCursor.pop() }
@@ -469,8 +560,10 @@ struct HomeView: View {
                     featureArea
                 }
 
+                CategoryBar(state: state)
+
                 if state.trendingVideos.count > 4 {
-                    SectionHeader(icon: "sparkles", title: "Recommended for you")
+                    SectionHeader(icon: "sparkles", title: "For you")
                     LazyVGrid(columns: fourColumnGrid, spacing: 18) {
                         ForEach(state.trendingVideos.dropFirst(4)) { video in
                             VideoCard(
@@ -502,32 +595,32 @@ struct HomeView: View {
     private var featureArea: some View {
         GeometryReader { geo in
             let isWide = geo.size.width >= 760
-            let quickWidth: CGFloat = 300
+            let quickWidth: CGFloat = 310
             let heroWidth = max(0, geo.size.width - quickWidth - 14)
 
             if isWide {
                 HStack(alignment: .top, spacing: 14) {
                     heroCarousel
-                        .frame(width: heroWidth, height: 340)
+                        .frame(width: heroWidth, height: 382)
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     quickPicksPanel
-                        .frame(width: quickWidth, height: 340)
+                        .frame(width: quickWidth, height: 382)
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
-                .frame(width: geo.size.width, height: 340, alignment: .topLeading)
+                .frame(width: geo.size.width, height: 382, alignment: .topLeading)
             } else {
                 VStack(alignment: .leading, spacing: 14) {
                     heroCarousel
-                        .frame(width: geo.size.width, height: 300)
+                        .frame(width: geo.size.width, height: 382)
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     quickPicksPanel
-                        .frame(width: geo.size.width, height: 286)
+                        .frame(width: geo.size.width, height: 300)
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
-                .frame(width: geo.size.width, height: 600, alignment: .topLeading)
+                .frame(width: geo.size.width, height: 696, alignment: .topLeading)
             }
         }
-        .frame(height: featureWidth >= 760 ? 340 : 600, alignment: .top)
+        .frame(height: featureWidth >= 760 ? 382 : 696, alignment: .top)
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.width
         } action: { width in
@@ -824,6 +917,18 @@ struct SearchResultsView: View {
                     } else {
                         ForEach(filteredResults) { video in
                             SearchDetailResultCard(state: state, video: video)
+                        }
+
+                        if let token = state.searchNextPageToken {
+                            HStack(spacing: 8) {
+                                ProgressView().controlSize(.small)
+                                Text(state.isLoadingMoreSearch ? "Loading more results…" : "More results")
+                            }
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.42))
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .id("search-\(token)")
+                            .onAppear { Task { await state.loadMoreSearch() } }
                         }
                     }
 

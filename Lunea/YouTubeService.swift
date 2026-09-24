@@ -1,6 +1,44 @@
 import Foundation
 import Combine
 import SwiftUI
+import Security
+
+private enum LuneaKeychain {
+    private static let service = "rahmn.Lunea"
+    private static let account = "youtube-data-api-key"
+
+    static func read() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    @discardableResult
+    static func save(_ value: String) -> Bool {
+        guard let data = value.data(using: .utf8) else { return false }
+        let identity: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        let update: [String: Any] = [kSecValueData as String: data]
+        let status = SecItemUpdate(identity as CFDictionary, update as CFDictionary)
+        if status == errSecSuccess { return true }
+        guard status == errSecItemNotFound else { return false }
+
+        var item = identity
+        item[kSecValueData as String] = data
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
+    }
+}
 
 // MARK: - YouTube API Service
 
@@ -14,7 +52,7 @@ class YouTubeService: ObservableObject {
     
     // MARK: - Search
 
-    func search(query: String, maxResults: Int = 20, pageToken: String? = nil) async throws -> YouTubeSearchResponse {
+    func search(query: String, maxResults: Int = 50, pageToken: String? = nil) async throws -> YouTubeSearchResponse {
         var components = URLComponents(string: "\(baseURL)/search")!
         var params: [URLQueryItem] = [
             .init(name: "part", value: "snippet"),
@@ -22,7 +60,8 @@ class YouTubeService: ObservableObject {
             .init(name: "maxResults", value: "\(maxResults)"),
             .init(name: "type", value: "video"),
             .init(name: "key", value: Self.apiKey),
-            .init(name: "relevanceLanguage", value: "id"),
+            .init(name: "relevanceLanguage", value: "en"),
+            .init(name: "regionCode", value: "US"),
         ]
         if let token = pageToken { params.append(.init(name: "pageToken", value: token)) }
         components.queryItems = params
@@ -34,7 +73,7 @@ class YouTubeService: ObservableObject {
 
     // MARK: - Trending / Home feed
 
-    func fetchTrending(regionCode: String = "ID", maxResults: Int = 20, pageToken: String? = nil) async throws -> YouTubeVideoListResponse {
+    func fetchTrending(regionCode: String = "US", maxResults: Int = 20, pageToken: String? = nil) async throws -> YouTubeVideoListResponse {
         var components = URLComponents(string: "\(baseURL)/videos")!
         var params: [URLQueryItem] = [
             .init(name: "part", value: "snippet,statistics,contentDetails"),
@@ -83,7 +122,7 @@ class YouTubeService: ObservableObject {
 
     // MARK: - Categories / suggestions
 
-    func fetchByCategory(categoryId: String, regionCode: String = "ID", maxResults: Int = 20, pageToken: String? = nil) async throws -> YouTubeVideoListResponse {
+    func fetchByCategory(categoryId: String, regionCode: String = "US", maxResults: Int = 20, pageToken: String? = nil) async throws -> YouTubeVideoListResponse {
         var components = URLComponents(string: "\(baseURL)/videos")!
         var params: [URLQueryItem] = [
             .init(name: "part", value: "snippet,statistics,contentDetails"),
@@ -104,17 +143,23 @@ class YouTubeService: ObservableObject {
 
     private func checkResponse(_ response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else { return }
+        if http.statusCode == 429 {
+            let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init) ?? 2
+            throw YouTubeError.rateLimited(retryAfter)
+        }
         if http.statusCode == 403 { throw YouTubeError.forbidden }
         if http.statusCode == 400 { throw YouTubeError.badRequest }
         if http.statusCode != 200 { throw YouTubeError.httpError(http.statusCode) }
     }
 
     enum YouTubeError: LocalizedError {
-        case forbidden, badRequest, httpError(Int)
+        case forbidden, badRequest, rateLimited(TimeInterval), httpError(Int)
         var errorDescription: String? {
             switch self {
             case .forbidden: return "The API key is invalid or its quota has been exceeded"
             case .badRequest: return "The request is invalid"
+            case .rateLimited:
+                return "YouTube search is temporarily limited or today's search allowance has been reached. It resets at midnight Pacific Time (around 2–3 PM Jakarta)."
             case .httpError(let code): return "HTTP Error \(code)"
             }
         }
@@ -172,6 +217,7 @@ class AppState: ObservableObject {
     @Published var relatedVideos: [YouTubeSearchItem] = []
     @Published var isLoading = false
     @Published var isSearching = false
+    @Published var isLoadingMoreSearch = false
     @Published var errorMessage: String? = nil
     @Published var searchQuery = ""
     @Published var selectedCategory = "All"
@@ -190,16 +236,30 @@ class AppState: ObservableObject {
     private let service = YouTubeService()
     private let keyStorageKey = "lunea.youtubeDataAPIKey"
     private var homeRequestID = UUID()
+    private var searchRequestID = UUID()
+    private var lastSearchRequestAt = Date.distantPast
+    private var lastSearchPaginationAt = Date.distantPast
+    private var searchCooldownUntil = Date.distantPast
+
+    private struct SearchCacheEntry {
+        let items: [YouTubeSearchItem]
+        let details: [YouTubeVideoDetail]
+        let nextPageToken: String?
+        let storedAt: Date
+    }
+    private var searchCache: [String: SearchCacheEntry] = [:]
 
     init() {
         self.currentTheme = availableThemes[0]
         // Migrate keys saved by older builds that accidentally used an empty defaults key.
-        let savedKey = UserDefaults.standard.string(forKey: keyStorageKey)
+        let savedKey = LuneaKeychain.read()
+            ?? UserDefaults.standard.string(forKey: keyStorageKey)
             ?? UserDefaults.standard.string(forKey: "")
         if let saved = savedKey, !saved.isEmpty {
             apiKey = saved
             YouTubeService.apiKey = saved
             UserDefaults.standard.set(saved, forKey: keyStorageKey)
+            LuneaKeychain.save(saved)
         } else {
             showApiKeySheet = true
         }
@@ -208,6 +268,7 @@ class AppState: ObservableObject {
     func saveApiKey(_ key: String) {
         apiKey = key
         UserDefaults.standard.set(key, forKey: keyStorageKey)
+        LuneaKeychain.save(key)
         showApiKeySheet = false
         Task { await loadHome() }
     }
@@ -293,42 +354,131 @@ class AppState: ObservableObject {
     }
 
     func search() async {
-            let query = searchQuery.trimmingCharacters(in: .whitespaces)
-            guard !query.isEmpty else { return }
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty, !isSearching else { return }
         NSApplication.shared.keyWindow?.makeFirstResponder(nil)
-            
-            // 🔥 KUNCI: Gerbang anti-spam HARUS ditaruh sebelum isSearching diubah jadi true!
-            guard !isSearching else { return }
-            
-            isSearching = true
-            defer { isSearching = false }
-            isSearchActive = true
-            errorMessage = nil
-            
-            // UX MAGIC: Jika player sedang layar penuh, otomatis minimize agar hasil search terlihat
-            if selectedVideoId != nil && !isPlayerMinimized {
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                    isPlayerMinimized = true
-                }
+
+        let cacheKey = query.lowercased()
+        let requestID = UUID()
+        searchRequestID = requestID
+        isSearchActive = true
+        errorMessage = nil
+
+        if selectedVideoId != nil && !isPlayerMinimized { isPlayerMinimized = true }
+
+        if let cached = searchCache[cacheKey],
+           Date().timeIntervalSince(cached.storedAt) < 86_400 {
+            searchResults = cached.items
+            searchResultDetails = cached.details
+            searchNextPageToken = cached.nextPageToken
+            return
+        }
+
+        isSearching = true
+        defer {
+            if searchRequestID == requestID { isSearching = false }
+        }
+
+        do {
+            let res = try await fetchSearchPage(query: query)
+            guard searchRequestID == requestID else { return }
+            let details = try await orderedDetails(for: res.items)
+            guard searchRequestID == requestID else { return }
+
+            searchResults = res.items
+            searchResultDetails = details
+            searchNextPageToken = res.nextPageToken
+            searchCache[cacheKey] = SearchCacheEntry(
+                items: res.items,
+                details: details,
+                nextPageToken: res.nextPageToken,
+                storedAt: Date()
+            )
+        } catch is CancellationError {
+            return
+        } catch {
+            guard searchRequestID == requestID else { return }
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func loadMoreSearch() async {
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty,
+              !isSearching,
+              !isLoadingMoreSearch,
+              let pageToken = searchNextPageToken else { return }
+
+        isLoadingMoreSearch = true
+        defer { isLoadingMoreSearch = false }
+
+        do {
+            let paginationGap = Date().timeIntervalSince(lastSearchPaginationAt)
+            if paginationGap < 1.8 {
+                try await Task.sleep(for: .seconds(1.8 - paginationGap))
             }
-            
+            lastSearchPaginationAt = Date()
+            let res = try await fetchSearchPage(query: query, pageToken: pageToken)
+            let details = try await orderedDetails(for: res.items)
+            let existingItemIDs = Set(searchResults.compactMap(\.videoId))
+            let existingDetailIDs = Set(searchResultDetails.map(\.id))
+            searchResults.append(contentsOf: res.items.filter {
+                guard let id = $0.videoId else { return false }
+                return !existingItemIDs.contains(id)
+            })
+            searchResultDetails.append(contentsOf: details.filter { !existingDetailIDs.contains($0.id) })
+            searchNextPageToken = res.nextPageToken
+
+            searchCache[query.lowercased()] = SearchCacheEntry(
+                items: searchResults,
+                details: searchResultDetails,
+                nextPageToken: searchNextPageToken,
+                storedAt: Date()
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func fetchSearchPage(query: String, pageToken: String? = nil) async throws -> YouTubeSearchResponse {
+        let cooldown = searchCooldownUntil.timeIntervalSinceNow
+        if cooldown > 0 {
+            throw YouTubeService.YouTubeError.rateLimited(cooldown)
+        }
+
+        let elapsed = Date().timeIntervalSince(lastSearchRequestAt)
+        if elapsed < 1.2 {
+            try await Task.sleep(for: .seconds(1.2 - elapsed))
+        }
+        lastSearchRequestAt = Date()
+
+        do {
+            return try await service.search(query: query, pageToken: pageToken)
+        } catch YouTubeService.YouTubeError.rateLimited(let retryAfter) {
+            // A 429 can represent the granular daily search allowance. Repeating
+            // the same request only wastes time and may intensify a short burst.
+            searchCooldownUntil = Date().addingTimeInterval(max(60, retryAfter))
+            throw YouTubeService.YouTubeError.rateLimited(max(60, retryAfter))
+        }
+    }
+
+    private func orderedDetails(for items: [YouTubeSearchItem]) async throws -> [YouTubeVideoDetail] {
+        let orderedIDs = items.compactMap(\.videoId)
+        guard !orderedIDs.isEmpty else { return [] }
+        for attempt in 0..<3 {
             do {
-                let res = try await service.search(query: query)
-                searchResults = res.items
-                searchNextPageToken = res.nextPageToken
-                let orderedIDs = res.items.compactMap(\.videoId)
-                if !orderedIDs.isEmpty {
-                    let details = try await service.fetchVideoDetails(ids: orderedIDs)
-                    let detailsByID = Dictionary(uniqueKeysWithValues: details.items.map { ($0.id, $0) })
-                    searchResultDetails = orderedIDs.compactMap { detailsByID[$0] }
-                } else {
-                    searchResultDetails = []
-                }
-            } catch {
-                errorMessage = error.localizedDescription
-                print("❌ Search Error:", error)
+                let response = try await service.fetchVideoDetails(ids: orderedIDs)
+                let byID = Dictionary(uniqueKeysWithValues: response.items.map { ($0.id, $0) })
+                return orderedIDs.compactMap { byID[$0] }
+            } catch YouTubeService.YouTubeError.rateLimited(let retryAfter) {
+                let backoff = max(retryAfter, 1.5 * pow(2, Double(attempt)))
+                searchCooldownUntil = Date().addingTimeInterval(backoff)
+                if attempt == 2 { throw YouTubeService.YouTubeError.rateLimited(backoff) }
+                try await Task.sleep(for: .seconds(backoff))
             }
         }
+        return []
+    }
 
     func selectVideo(_ videoId: String) async {
         NSApplication.shared.keyWindow?.makeFirstResponder(nil)
@@ -362,6 +512,9 @@ class AppState: ObservableObject {
         }
 
     func clearSearch() {
+        searchRequestID = UUID()
+        isSearching = false
+        isLoadingMoreSearch = false
         searchQuery = ""
         searchResults = []
         searchResultDetails = []

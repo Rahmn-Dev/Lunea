@@ -151,68 +151,71 @@ struct HeroFeaturedCard: View {
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: action) {
-            ZStack {
-                CachedAsyncImage(url: URL(string: video.snippet?.thumbnails.best?.url ?? "")) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Rectangle().fill(Color.white.opacity(0.05))
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.12), .black.opacity(0.88)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-
-                VStack(alignment: .leading, spacing: 7) {
-                    Spacer(minLength: 0)
-
-                    Text(state.selectedCategory == "All" ? "FEATURED" : state.selectedCategory.uppercased())
-                        .font(.system(size: 10, weight: .bold))
-                        .tracking(1.2)
-                        .foregroundStyle(state.currentTheme.accentColor)
-
-                    Text(video.snippet?.title ?? "")
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    HStack(spacing: 10) {
-                        Label("Play", systemImage: "play.fill")
-                            .font(.system(size: 12, weight: .bold))
-                            .padding(.horizontal, 15)
-                            .frame(height: 36)
-                            .foregroundStyle(.white)
-                            .background(Color.white.opacity(0.18), in: Capsule())
-
-                        Text(video.snippet?.channelTitle ?? "")
-                        if let views = video.statistics?.formattedViews { Text("· \(views) views") }
+        GeometryReader { proxy in
+            Button(action: action) {
+                ZStack {
+                    CachedAsyncImage(url: URL(string: video.snippet?.thumbnails.best?.url ?? "")) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Rectangle().fill(Color.white.opacity(0.05))
                     }
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.72))
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                .padding(.horizontal, 20)
-                .padding(.top, 18)
-                .padding(.bottom, 48)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .clipped()
 
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.white.opacity(isHovered ? 0.045 : 0))
-                    .allowsHitTesting(false)
+                    LinearGradient(
+                        colors: [.clear, .black.opacity(0.10), .black.opacity(0.90)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+
+                    VStack(alignment: .leading, spacing: 7) {
+                        Spacer(minLength: 0)
+
+                        Text(state.selectedCategory == "All" ? "FEATURED" : state.selectedCategory.uppercased())
+                            .font(.system(size: 10, weight: .bold))
+                            .tracking(1.2)
+                            .foregroundStyle(state.currentTheme.accentColor)
+
+                        Text(video.snippet?.title ?? "")
+                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        HStack(spacing: 10) {
+                            Label("Play", systemImage: "play.fill")
+                                .font(.system(size: 12, weight: .bold))
+                                .padding(.horizontal, 15)
+                                .frame(height: 36)
+                                .foregroundStyle(.white)
+                                .background(Color.white.opacity(isHovered ? 0.28 : 0.18), in: Capsule())
+
+                            Text(video.snippet?.channelTitle ?? "")
+                                .lineLimit(1)
+                            if let views = video.statistics?.formattedViews { Text("· \(views) views") }
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.72))
+                    }
+                    .frame(width: proxy.size.width - 40, height: proxy.size.height - 66, alignment: .bottomLeading)
+                    .position(x: proxy.size.width / 2, y: (proxy.size.height - 4) / 2)
+
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.white.opacity(isHovered ? 0.045 : 0))
+                        .allowsHitTesting(false)
+                }
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .contentShape(Rectangle())
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(Color.white.opacity(isHovered ? 0.2 : 0.1), lineWidth: 0.5)
+                }
             }
-            .contentShape(Rectangle())
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(Color.white.opacity(isHovered ? 0.2 : 0.1), lineWidth: 0.5)
-            }
+            .buttonStyle(.plain)
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
-        .buttonStyle(.plain)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.easeOut(duration: 0.14), value: isHovered)
         .onHover { isHovered = $0 }

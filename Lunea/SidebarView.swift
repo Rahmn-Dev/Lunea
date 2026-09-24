@@ -37,10 +37,11 @@ struct SidebarView: View {
                 .padding(.bottom, 22)
                 .transition(.opacity)
             } else {
-                Image(systemName: "sparkles.tv.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(state.currentTheme.accentColor)
-                    .frame(height: 64)
+                Capsule()
+                    .fill(state.currentTheme.accentColor)
+                    .frame(width: 24, height: 3)
+                    .shadow(color: state.currentTheme.accentColor.opacity(0.55), radius: 8)
+                    .frame(height: 40)
             }
 
             ScrollView(showsIndicators: false) {
@@ -184,7 +185,7 @@ struct SidebarView: View {
             .padding(.horizontal, isCollapsed ? 14 : 16)
             .padding(.bottom, 18)
         }
-        .background(Color.black.opacity(0.08))
+        .background(Color.white.opacity(0.025))
     }
 }
 // MARK: - Tombol Tema Mandiri (Anti-Bug Hover & Klik Seluruh Area)
@@ -247,6 +248,81 @@ struct ThemeBackground: View {
         }
         .ignoresSafeArea()
         .animation(.easeInOut(duration: 0.25), value: state.currentTheme.name)
+    }
+}
+
+/// Lightweight theme-driven ambience. It animates only gradient transforms,
+/// avoiding image decoding and full-window blur during scrolling.
+struct AmbientVideoBackdrop: View {
+    @ObservedObject var state: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isAnimated = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let height = proxy.size.height
+            let secondary = state.currentTheme.gradientColors.last ?? state.currentTheme.accentColor
+
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        state.currentTheme.backgroundColor,
+                        state.currentTheme.gradientColors.dropFirst().first ?? state.currentTheme.backgroundColor,
+                        Color.black.opacity(0.92)
+                    ],
+                    startPoint: isAnimated ? .topTrailing : .topLeading,
+                    endPoint: isAnimated ? .bottomLeading : .bottomTrailing
+                )
+
+                RadialGradient(
+                    colors: [state.currentTheme.accentColor.opacity(0.48), .clear],
+                    center: isAnimated
+                        ? UnitPoint(x: 0.76, y: 0.22)
+                        : UnitPoint(x: 0.20, y: 0.72),
+                    startRadius: 0,
+                    endRadius: max(width, height) * 0.72
+                )
+                .frame(width: width, height: height)
+
+                RadialGradient(
+                    colors: [secondary.opacity(0.38), .clear],
+                    center: isAnimated
+                        ? UnitPoint(x: 0.22, y: 0.76)
+                        : UnitPoint(x: 0.80, y: 0.24),
+                    startRadius: 0,
+                    endRadius: max(width, height) * 0.66
+                )
+                .frame(width: width, height: height)
+
+                LinearGradient(
+                    colors: [Color.white.opacity(0.035), .clear, Color.black.opacity(0.24)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+
+                // A subtle vignette keeps text readable without flattening the colors.
+                ZStack {
+                    Color.black.opacity(0.08)
+                    RadialGradient(
+                        colors: [.clear, Color.black.opacity(0.30)],
+                        center: .center,
+                        startRadius: min(width, height) * 0.20,
+                        endRadius: max(width, height) * 0.76
+                    )
+                }
+            }
+            .frame(width: width, height: height)
+            .clipped()
+        }
+        .ignoresSafeArea()
+        .animation(.easeInOut(duration: 0.55), value: state.currentTheme.name)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 12).repeatForever(autoreverses: true)) {
+                isAnimated = true
+            }
+        }
     }
 }
 
