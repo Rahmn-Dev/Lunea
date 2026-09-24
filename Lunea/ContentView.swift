@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import AppKit
 
 // MARK: - Root
 
@@ -35,6 +36,7 @@ struct ContentView: View {
     @StateObject private var state = AppState()
     @State private var selectedTab: Tab = .home
     @State private var isSidebarCollapsed = false
+    @State private var isVideoFullscreen = false
 
     enum Tab: String, Equatable {
         case home, explore, shorts, subs
@@ -45,108 +47,136 @@ struct ContentView: View {
         ZStack {
             ThemeBackground(state: state)
 
-            HStack(spacing: 16) {
-                // KIRI: Sidebar
-                SidebarView(state: state, selectedTab: $selectedTab, isCollapsed: $isSidebarCollapsed)
-                    .frame(width: isSidebarCollapsed ? 75 : 250)
-                    .background(.ultraThinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.15), lineWidth: 0.8)
-                    }
-                    .shadow(color: .black.opacity(0.3), radius: 20, y: 10)
-                    .padding(.vertical, 16)
-                    .padding(.leading, 16)
-                    .environment(\.colorScheme, .dark)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.82), value: isSidebarCollapsed)
-
-                // KANAN: Main Content
-                VStack(spacing: 0) {
-                    ZStack(alignment: .top) {  // ← alignment .top, floating di atas
-
-                        // Layer 1: Konten utama
-                        ZStack {
-                            if state.isSearchActive {
-                                SearchResultsView(state: state)
-                                    .transition(.opacity)
-                            } else {
-                                HomeView(state: state, selectedTab: selectedTab)
-                                    .transition(.opacity)
-                            }
-
-                            if state.isShowingPlayer, let vid = state.selectedVideoId {
-                                FloatingPlayerOverlay(videoId: vid)
-                                    .environmentObject(state)
-                                    .id(vid)
-                            }
-                        }
-                        .animation(.easeInOut(duration: 0.3), value: state.isShowingPlayer)
-                        .animation(.easeInOut(duration: 0.3), value: state.isSearchActive)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        // Padding atas agar konten tidak tertutup TopBar + kategori
-                        .safeAreaInset(edge: .top) {
-                            Color.clear.frame(height: 120)
-                        }
-
-                        // Layer 2: TopBar + kategori floating di atas
-                        VStack(spacing: 8) {
-                            TopBar(state: state)
-                                .padding(.horizontal, 20)
-                                .padding(.top, 16)
-
-                            // Kategori floating — hanya muncul kalau tidak search
-                            if !state.isSearchActive {
-                                CategoryBar(state: state)
-                                    .padding(.horizontal, 20)
-                                    .padding(.bottom, 4)
-                            }
-                        }
-                    }
+            VStack(spacing: 0) {
+                if !isVideoFullscreen {
+                    WindowTitleBar(
+                        state: state,
+                        isSidebarCollapsed: $isSidebarCollapsed
+                    )
+                    .frame(height: 58)
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                .glassEffect(
-                    .regular,
-                    in: RoundedRectangle(cornerRadius: 24, style: .continuous)
-                )
-                .padding(.vertical, 16)
-                .padding(.trailing, 16)
+
+                HStack(spacing: 0) {
+                    if !isVideoFullscreen {
+                        SidebarView(
+                            state: state,
+                            selectedTab: $selectedTab,
+                            isCollapsed: $isSidebarCollapsed
+                        )
+                        .frame(width: isSidebarCollapsed ? 82 : 238)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                    }
+
+                    ZStack(alignment: .top) {
+                        workspaceContent
+
+                        if !state.isSearchActive && (!state.isShowingPlayer || state.isPlayerMinimized) {
+                            CategoryBar(state: state)
+                                .padding(.horizontal, 24)
+                                .padding(.top, 18)
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                    }
+                    .background(Color.black.opacity(0.16))
+                    .clipShape(RoundedRectangle(cornerRadius: isVideoFullscreen ? 0 : 22, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.11), lineWidth: 0.7)
+                    }
+                    .padding(.trailing, isVideoFullscreen ? 0 : 14)
+                    .padding(.bottom, isVideoFullscreen ? 0 : 14)
+                }
             }
         }
-        .frame(minWidth: 1000, minHeight: 700)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5)
+        .onReceive(NotificationCenter.default.publisher(for: .toggleVideoFullscreen)) { _ in
+            withAnimation(.easeInOut(duration: 0.3)) {
+                isVideoFullscreen.toggle()
+            }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .exitVideoFullscreen)) { _ in
+            withAnimation(.easeInOut(duration: 0.3)) {
+                isVideoFullscreen = false
+            }
+        }
+        .animation(.spring(response: 0.34, dampingFraction: 0.86), value: isSidebarCollapsed)
+        .frame(minWidth: 980, minHeight: 680)
         .sheet(isPresented: $state.showApiKeySheet) { ApiKeySheet(state: state) }
         .task { await state.loadHome() }
     }
+
+    @ViewBuilder
+    private var workspaceContent: some View {
+        ZStack {
+            Group {
+                if state.isSearchActive {
+                    SearchResultsView(state: state)
+                } else {
+                    HomeView(state: state, selectedTab: selectedTab)
+                }
+            }
+            .padding(
+                .top,
+                !state.isSearchActive && (!state.isShowingPlayer || state.isPlayerMinimized) ? 70 : 0
+            )
+            .transition(.opacity)
+
+            if state.isShowingPlayer, let videoId = state.selectedVideoId {
+                FloatingPlayerOverlay(videoId: videoId)
+                    .environmentObject(state)
+                    .id(videoId)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: state.isShowingPlayer)
+        .animation(.easeInOut(duration: 0.22), value: state.isSearchActive)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 }
 
-// MARK: - Top Bar
+// MARK: - Window chrome and search
 
-struct TopBar: View {
+struct WindowTitleBar: View {
     @ObservedObject var state: AppState
+    @Binding var isSidebarCollapsed: Bool
     @FocusState private var isSearchFocused: Bool
     @State private var isSearchHovered = false
 
     var body: some View {
-        GlassEffectContainer(spacing: 8) {
-            HStack(spacing: 8) {
+        ZStack {
+            WindowDragArea()
 
-                if state.isShowingPlayer && !state.isPlayerMinimized {
-                    SearchBarButton(icon: "chevron.down") {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                            state.isPlayerMinimized = true
-                        }
-                    }
-                } else if state.isSearchActive {
-                    SearchBarButton(icon: "chevron.left") {
-                        withAnimation { state.clearSearch() }
-                    }
+            HStack(spacing: 14) {
+                HStack(spacing: 8) {
+                    TLButton(color: Color(hex: "FF5F57"), icon: "xmark") { NSApp.terminate(nil) }
+                    TLButton(color: Color(hex: "FFBD2E"), icon: "minus") { NSApp.keyWindow?.miniaturize(nil) }
+                    TLButton(color: Color(hex: "28C840"), icon: "plus") { NSApp.keyWindow?.zoom(nil) }
                 }
+                .frame(width: 72)
 
-                // Search bar pill — klik di mana saja = focus TextField
+                Button {
+                    isSidebarCollapsed.toggle()
+                } label: {
+                    Image(systemName: "sidebar.left")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .frame(width: 30, height: 30)
+                        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+                .help(isSidebarCollapsed ? "Show sidebar" : "Hide sidebar")
+
+                HStack(spacing: 9) {
+                    Image(systemName: "play.square.stack.fill")
+                        .foregroundStyle(state.currentTheme.accentColor)
+                    Text("Lunea")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+                .frame(width: 110, alignment: .leading)
+
+                Spacer(minLength: 18)
+
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 15, weight: .semibold))
@@ -156,9 +186,9 @@ struct TopBar: View {
                                 : (isSearchHovered ? Color.primary : Color.secondary)
                         )
 
-                    TextField("Find Videos...", text: $state.searchQuery)
+                    TextField("Search videos, music, or channels", text: $state.searchQuery)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                         .focused($isSearchFocused)
                         .onSubmit { Task { await state.search() } }
 
@@ -175,29 +205,64 @@ struct TopBar: View {
                         .transition(.scale.combined(with: .opacity))
                     }
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 14)
-                .frame(width: isSearchFocused ? 520 : 400)
-                // ✅ Tap di mana saja dalam capsule → focus ke TextField
+                .padding(.horizontal, 14)
+                .frame(width: isSearchFocused ? 460 : 360, height: 36)
                 .contentShape(Capsule())
                 .onTapGesture { isSearchFocused = true }
-                .glassEffect(
-                    isSearchFocused
-                        ? .regular.interactive().tint(state.currentTheme.accentColor.opacity(0.3))
-                        : isSearchHovered
-                            ? .regular.interactive().tint(Color.white.opacity(0.12))
-                            : .regular.interactive(),
-                    in: Capsule()
-                )
+                .background(Color.white.opacity(isSearchFocused ? 0.13 : (isSearchHovered ? 0.10 : 0.07)), in: Capsule())
+                .overlay {
+                    Capsule().strokeBorder(
+                        isSearchFocused ? state.currentTheme.accentColor.opacity(0.65) : Color.white.opacity(0.1),
+                        lineWidth: 0.8
+                    )
+                }
                 .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isSearchFocused)
-                .onHover { hovered in
-                    isSearchHovered = hovered
-                    if hovered { NSCursor.iBeam.push() } else { NSCursor.pop() }
+                .onHover { isSearchHovered = $0 }
+
+                if state.isShowingPlayer {
+                    HStack(spacing: 7) {
+                        SearchBarButton(icon: state.isPlayerMinimized ? "arrow.up.left.and.arrow.down.right" : "chevron.down") {
+                            state.isPlayerMinimized.toggle()
+                        }
+                        .help(state.isPlayerMinimized ? "Expand player" : "Minimize player")
+
+                        SearchBarButton(icon: "xmark") {
+                            withAnimation(.easeInOut(duration: 0.2)) { state.closePlayer() }
+                        }
+                        .help("Close player")
+                    }
+                } else if state.isSearchActive {
+                    SearchBarButton(icon: "arrow.uturn.backward") {
+                        state.clearSearch()
+                    }
+                    .help("Back")
+                } else {
+                    Color.clear.frame(width: 38, height: 38)
                 }
 
-                SearchBarButton(icon: "key.fill") {
-                    state.showApiKeySheet = true
-                }
+                Spacer(minLength: 18)
+
+                Text(state.apiKey.isEmpty ? "Setup required" : "Ready to play")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.45))
+                    .frame(width: 110, alignment: .trailing)
+            }
+            .padding(.horizontal, 18)
+        }
+        .environment(\.colorScheme, .dark)
+    }
+}
+
+struct WindowDragArea: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { DraggableView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class DraggableView: NSView {
+        override func mouseDown(with event: NSEvent) {
+            if event.clickCount == 2 {
+                window?.zoom(nil)
+            } else {
+                window?.performDrag(with: event)
             }
         }
     }
@@ -233,15 +298,18 @@ struct CategoryChip: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        // ✅ glassEffect di luar button — jadi background, hit area tetap penuh
-        .glassEffect(
+        .background(
             isSelected
-                ? .regular.interactive().tint(state.currentTheme.accentColor.opacity(0.35))
-                : isHovered
-                    ? .regular.interactive().tint(Color.white.opacity(0.12))
-                    : .regular.interactive(),
+                ? state.currentTheme.accentColor.opacity(0.22)
+                : Color.white.opacity(isHovered ? 0.09 : 0.045),
             in: Capsule()
         )
+        .overlay {
+            Capsule().strokeBorder(
+                isSelected ? state.currentTheme.accentColor.opacity(0.55) : Color.white.opacity(0.08),
+                lineWidth: 0.7
+            )
+        }
         .onHover { hovered in
             isHovered = hovered
             if hovered { NSCursor.pointingHand.push() } else { NSCursor.pop() }
@@ -255,13 +323,10 @@ struct CategoryBar: View {
     var body: some View {
         GeometryReader { geo in
             ScrollView(.horizontal, showsIndicators: false) {
-                GlassEffectContainer(spacing: 8) {
-                    HStack(spacing: 8) {
-                        ForEach(state.categories, id: \.self) { cat in
-                            CategoryChip(state: state, cat: cat)
-                        }
+                HStack(spacing: 8) {
+                    ForEach(state.categories, id: \.self) { cat in
+                        CategoryChip(state: state, cat: cat)
                     }
-                    .frame(minWidth: geo.size.width, alignment: .center)
                 }
                 .frame(minWidth: geo.size.width, alignment: .center)
             }
@@ -282,18 +347,13 @@ struct SearchBarButton: View {
             Image(systemName: icon)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(isHovered ? Color.primary : Color.secondary)
-                .frame(width: 50, height: 50)
+                .frame(width: 38, height: 38)
                 // ✅ contentShape = hit area penuh circle, bukan cuma ikon
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        // ✅ glassEffect SATU kali di luar button — tidak double layer
-        .glassEffect(
-            isHovered
-                ? .regular.interactive().tint(Color.white.opacity(0.15))
-                : .regular.interactive(),
-            in: Circle()
-        )
+        .background(Color.white.opacity(isHovered ? 0.12 : 0.06), in: Circle())
+        .overlay { Circle().strokeBorder(Color.white.opacity(0.09), lineWidth: 0.6) }
         .onHover { hovered in
             isHovered = hovered
             if hovered { NSCursor.pointingHand.push() } else { NSCursor.pop() }
@@ -346,69 +406,73 @@ struct HeaderButton: View {
 struct HomeView: View {
     @ObservedObject var state: AppState
     let selectedTab: ContentView.Tab
-    @State private var currentIndex = 0
-    let timer = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
+    @State private var currentHeroIndex = 0
+    @State private var featureWidth: CGFloat = 0
+    private let heroTimer = Timer.publish(every: 6, on: .main, in: .common).autoconnect()
+
+    private var fourColumnGrid: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: 14), count: 3)
+    }
+
+    private var heroVideos: [YouTubeVideoDetail] {
+        Array(state.trendingVideos.prefix(5))
+    }
+
+    private var currentHero: YouTubeVideoDetail? {
+        guard !heroVideos.isEmpty else { return nil }
+        return heroVideos[currentHeroIndex % heroVideos.count]
+    }
 
     var body: some View {
+        Group {
+            switch selectedTab {
+            case .home:
+                homeDashboard
+            case .explore:
+                videoGrid(title: "Explore", icon: "safari.fill", videos: state.trendingVideos)
+            case .shorts:
+                videoGrid(
+                    title: "Shorts",
+                    subtitle: "Quick videos under three minutes",
+                    icon: "play.rectangle.fill",
+                    videos: shortVideos
+                )
+            case .subs:
+                CollectionEmptyState(
+                    icon: "play.tv.fill",
+                    title: "Subscriptions",
+                    message: "Connect your YouTube account to see videos from channels you follow."
+                )
+            case .history:
+                CollectionEmptyState(icon: "clock.arrow.circlepath", title: "History", message: "Videos you finish watching will appear here.")
+            case .watchlater:
+                CollectionEmptyState(icon: "clock.fill", title: "Watch Later", message: "Save videos from the player to watch them later.")
+            case .liked:
+                CollectionEmptyState(icon: "hand.thumbsup.fill", title: "Liked Videos", message: "Videos you like will be collected here.")
+            case .playlist:
+                CollectionEmptyState(icon: "list.bullet.rectangle.fill", title: "Playlists", message: "Your playlist collections will appear here.")
+            }
+        }
+        .overlay {
+            if state.isLoading && state.trendingVideos.isEmpty {
+                ProgressView("Loading videos…")
+                    .tint(state.currentTheme.accentColor)
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+        }
+    }
+
+    private var homeDashboard: some View {
         ScrollView {
-            LazyVStack(spacing: 30) {
-
-                // Hero Carousel
+            LazyVStack(alignment: .leading, spacing: 24) {
                 if !state.trendingVideos.isEmpty {
-                    let items = Array(state.trendingVideos.prefix(5))
-                    let timer = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
-
-                    ScrollViewReader { proxy in
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            LazyHStack(spacing: 20) {
-                                ForEach(0..<items.count, id: \.self) { index in
-                                    HeroFeaturedCard(
-                                        state: state,
-                                        video: items[index],
-                                        action: { Task { await state.selectVideo(items[index].id) } }
-                                    )
-                                    .containerRelativeFrame(.horizontal, count: 1, spacing: 20)
-                                    .clipShape(RoundedRectangle(cornerRadius: 35, style: .continuous))
-                                    .id(index)
-                                }
-                            }
-                            .scrollTargetLayout()
-                        }
-                        .scrollTargetBehavior(.viewAligned)
-                        .contentMargins(.horizontal, 80, for: .scrollContent)
-                        .frame(height: 370)
-                        .onReceive(timer) { _ in
-                            withAnimation(.easeInOut(duration: 0.8)) {
-                                let nextIndex = (currentIndex + 1) % items.count
-                                currentIndex = nextIndex
-                                proxy.scrollTo(nextIndex, anchor: .center)
-                            }
-                        }
-                    }
+                    featureArea
                 }
 
-                // Recommendation Row
-                if state.trendingVideos.count > 5 {
-                    SectionHeader(icon: "rectangle.stack.fill", title: "Reccomendation")
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 20) {
-                            ForEach(state.trendingVideos.prefix(5).dropFirst()) { video in
-                                VideoCard(
-                                    state: state, video: video,
-                                    action: { Task { await state.selectVideo(video.id) } }
-                                )
-                                .frame(width: 280)
-                            }
-                        }
-                        .padding(.horizontal, 24)
-                    }
-                }
-
-                // Explore Grid
-                if state.trendingVideos.count > 6 {
-                    SectionHeader(icon: "square.grid.3x3.fill", title: "Explore All")
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 20) {
-                        ForEach(state.trendingVideos.dropFirst(6)) { video in
+                if state.trendingVideos.count > 4 {
+                    SectionHeader(icon: "sparkles", title: "Recommended for you")
+                    LazyVGrid(columns: fourColumnGrid, spacing: 18) {
+                        ForEach(state.trendingVideos.dropFirst(4)) { video in
                             VideoCard(
                                 state: state, video: video,
                                 action: { Task { await state.selectVideo(video.id) } }
@@ -417,12 +481,265 @@ struct HomeView: View {
                     }
                 }
 
-                Color.clear.onAppear {
-                    Task { await state.loadMore() }
+                if !shortVideos.isEmpty {
+                    SectionHeader(icon: "bolt.fill", title: "Shorts")
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(alignment: .top, spacing: 12) {
+                            ForEach(shortVideos.prefix(8)) { video in
+                                ShortVideoCard(state: state, video: video)
+                            }
+                        }
+                    }
                 }
+
+                paginationFooter
             }
             .padding(24)
         }
+        .onChange(of: state.selectedCategory) { _, _ in currentHeroIndex = 0 }
+    }
+
+    private var featureArea: some View {
+        GeometryReader { geo in
+            let isWide = geo.size.width >= 760
+            let quickWidth: CGFloat = 300
+            let heroWidth = max(0, geo.size.width - quickWidth - 14)
+
+            if isWide {
+                HStack(alignment: .top, spacing: 14) {
+                    heroCarousel
+                        .frame(width: heroWidth, height: 340)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    quickPicksPanel
+                        .frame(width: quickWidth, height: 340)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
+                .frame(width: geo.size.width, height: 340, alignment: .topLeading)
+            } else {
+                VStack(alignment: .leading, spacing: 14) {
+                    heroCarousel
+                        .frame(width: geo.size.width, height: 300)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    quickPicksPanel
+                        .frame(width: geo.size.width, height: 286)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
+                .frame(width: geo.size.width, height: 600, alignment: .topLeading)
+            }
+        }
+        .frame(height: featureWidth >= 760 ? 340 : 600, alignment: .top)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { width in
+            if abs(featureWidth - width) > 1 { featureWidth = width }
+        }
+        .animation(.easeInOut(duration: 0.3), value: currentHeroIndex)
+        .onReceive(heroTimer) { _ in
+            guard heroVideos.count > 1 else { return }
+            withAnimation(.easeInOut(duration: 0.35)) {
+                currentHeroIndex = (currentHeroIndex + 1) % heroVideos.count
+            }
+        }
+    }
+
+    private var heroCarousel: some View {
+        ZStack(alignment: .bottom) {
+            if let video = currentHero {
+                HeroFeaturedCard(
+                    state: state,
+                    video: video,
+                    action: { Task { await state.selectVideo(video.id) } }
+                )
+                .id(video.id)
+                .transition(.opacity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+
+            HStack(spacing: 6) {
+                ForEach(heroVideos.indices, id: \.self) { index in
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.3)) { currentHeroIndex = index }
+                    } label: {
+                        Capsule()
+                            .fill(index == currentHeroIndex ? Color.white : Color.white.opacity(0.35))
+                            .frame(width: index == currentHeroIndex ? 28 : 10, height: 5)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(Color.black.opacity(0.44), in: Capsule())
+            .padding(.bottom, 14)
+            .zIndex(20)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var quickPicksPanel: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack {
+                Text("Quick picks")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.9))
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.35))
+            }
+
+            ScrollView(showsIndicators: false) {
+                LazyVStack(spacing: 8) {
+                    ForEach(state.trendingVideos.dropFirst()) { video in
+                        CompactVideoRow(state: state, video: video)
+                    }
+
+                    if let token = state.nextPageToken {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(state.currentTheme.accentColor)
+                            .frame(maxWidth: .infinity, minHeight: 34)
+                            .id("quick-\(token)")
+                            .onAppear { Task { await state.loadMore() } }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 18))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18)
+                .strokeBorder(Color.white.opacity(0.09), lineWidth: 0.6)
+        }
+    }
+
+    private var shortVideos: [YouTubeVideoDetail] {
+        let filtered = state.trendingVideos.filter {
+            guard let seconds = $0.contentDetails?.durationSeconds else { return false }
+            return seconds > 0 && seconds <= 180
+        }
+        return filtered.isEmpty ? state.trendingVideos : filtered
+    }
+
+    private func videoGrid(
+        title: String,
+        subtitle: String = "Browse what is popular right now",
+        icon: String,
+        videos: [YouTubeVideoDetail]
+    ) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 20) {
+                FeedSummaryHeader(
+                    category: title,
+                    subtitle: subtitle,
+                    videoCount: videos.count,
+                    accent: state.currentTheme.accentColor,
+                    icon: icon
+                )
+                LazyVGrid(columns: fourColumnGrid, spacing: 18) {
+                    ForEach(videos) { video in
+                        VideoCard(state: state, video: video) {
+                            Task { await state.selectVideo(video.id) }
+                        }
+                    }
+                }
+                paginationFooter
+            }
+            .padding(24)
+        }
+    }
+
+    @ViewBuilder
+    private var paginationFooter: some View {
+        if let token = state.nextPageToken {
+            HStack {
+                Spacer()
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading more…")
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.4))
+                .frame(height: 44)
+                Spacer()
+            }
+            .id(token)
+            .onAppear { Task { await state.loadMore() } }
+        }
+    }
+}
+
+struct FeedSummaryHeader: View {
+    let category: String
+    var subtitle: String? = nil
+    let videoCount: Int
+    let accent: Color
+    var icon: String = "sparkles"
+
+    private var detail: String {
+        if let subtitle { return subtitle }
+        return category == "All"
+            ? "A fresh mix of trending videos across every category"
+            : "Popular \(category.lowercased()) videos, updated for you"
+    }
+
+    var body: some View {
+        HStack(spacing: 16) {
+            Image(systemName: icon)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(accent)
+                .frame(width: 42, height: 42)
+                .background(accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 13))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(category == "All" ? "For You" : category)
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.94))
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.42))
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("\(videoCount)")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.88))
+                Text("VIDEOS")
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(1.2)
+                    .foregroundStyle(.white.opacity(0.3))
+            }
+        }
+        .padding(.horizontal, 4)
+    }
+}
+
+struct CollectionEmptyState: View {
+    let icon: String
+    let title: String
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 34, weight: .medium))
+                .foregroundStyle(.white.opacity(0.28))
+                .frame(width: 72, height: 72)
+                .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20))
+            Text(title)
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.9))
+            Text(message)
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.42))
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 330)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(40)
     }
 }
 
@@ -430,34 +747,222 @@ struct HomeView: View {
 
 struct SearchResultsView: View {
     @ObservedObject var state: AppState
+    @State private var uploadDate: SearchUploadDate = .any
+    @State private var resultType: SearchResultType = .all
+    @State private var duration: SearchDuration = .any
+    @State private var feature: SearchFeature = .all
+    @State private var sort: SearchSort = .relevance
+
+    private var filteredResults: [YouTubeVideoDetail] {
+        var results = state.searchResultDetails
+
+        if let days = uploadDate.days,
+           let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date()) {
+            results = results.filter {
+                guard let value = $0.snippet?.publishedAt,
+                      let date = ISO8601DateFormatter().date(from: value) else { return false }
+                return date >= cutoff
+            }
+        }
+
+        switch resultType {
+        case .all: break
+        case .videos: results = results.filter { ($0.contentDetails?.durationSeconds ?? 0) > 180 }
+        case .shorts: results = results.filter { (1...180).contains($0.contentDetails?.durationSeconds ?? 0) }
+        }
+
+        switch duration {
+        case .any: break
+        case .underFour: results = results.filter { (1..<240).contains($0.contentDetails?.durationSeconds ?? 0) }
+        case .medium: results = results.filter { (240...1200).contains($0.contentDetails?.durationSeconds ?? 0) }
+        case .long: results = results.filter { ($0.contentDetails?.durationSeconds ?? 0) > 1200 }
+        }
+
+        switch feature {
+        case .all: break
+        case .hd: results = results.filter { $0.contentDetails?.definition == "hd" }
+        case .live: results = results.filter { $0.snippet?.liveBroadcastContent == "live" }
+        }
+
+        switch sort {
+        case .relevance: break
+        case .uploadDate:
+            results.sort { ($0.snippet?.publishedAt ?? "") > ($1.snippet?.publishedAt ?? "") }
+        case .viewCount:
+            results.sort { Int($0.statistics?.viewCount ?? "0") ?? 0 > Int($1.statistics?.viewCount ?? "0") ?? 0 }
+        case .rating:
+            results.sort { Int($0.statistics?.likeCount ?? "0") ?? 0 > Int($1.statistics?.likeCount ?? "0") ?? 0 }
+        }
+        return results
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(icon: "magnifyingglass", title: "\"\(state.searchQuery)\"")
-                    .padding(.bottom, 4)
+        HStack(spacing: 0) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Search results")
+                                .font(.system(size: 20, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.94))
+                            Text("\(filteredResults.count) results for “\(state.searchQuery)”")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.white.opacity(0.42))
+                        }
+                        Spacer()
+                    }
+                    .padding(.bottom, 8)
 
-                if state.isSearching {
-                    HStack { Spacer(); ProgressView().scaleEffect(1.4).tint(state.currentTheme.accentColor); Spacer() }
-                        .padding(.top, 80)
-                } else if let err = state.errorMessage {
-                    ErrorView(state: state, message: err) { Task { await state.search() } }
-                } else if state.searchResults.isEmpty {
-                    HStack { Spacer(); Text("Video tidak ditemukan.").font(.system(size: 14)).foregroundColor(.white.opacity(0.5)); Spacer() }
-                        .padding(.top, 60)
-                } else {
-                    ForEach(state.searchResults) { item in
-                        if let vid = item.videoId {
-                            SearchResultCard(state: state, item: item)
-                                .onTapGesture { Task { await state.selectVideo(vid) } }
+                    if state.isSearching {
+                        HStack { Spacer(); ProgressView().tint(state.currentTheme.accentColor); Spacer() }
+                            .padding(.top, 80)
+                    } else if let err = state.errorMessage {
+                        ErrorView(state: state, message: err) { Task { await state.search() } }
+                    } else if filteredResults.isEmpty {
+                        HStack { Spacer(); Text("No videos match these filters.").font(.system(size: 13)).foregroundStyle(.white.opacity(0.45)); Spacer() }
+                            .padding(.top, 60)
+                    } else {
+                        ForEach(filteredResults) { video in
+                            SearchDetailResultCard(state: state, video: video)
                         }
                     }
-                }
 
-                Spacer(minLength: 40)
+                    Spacer(minLength: 30)
+                }
+                .padding(22)
             }
-            .padding(20)
+
+            Rectangle().fill(Color.white.opacity(0.08)).frame(width: 0.6)
+
+            SearchFiltersPanel(
+                accent: state.currentTheme.accentColor,
+                uploadDate: $uploadDate,
+                resultType: $resultType,
+                duration: $duration,
+                feature: $feature,
+                sort: $sort
+            )
+            .frame(width: 258)
         }
+    }
+}
+
+enum SearchUploadDate: String, CaseIterable {
+    case any = "Any time", today = "Today", week = "This week", month = "This month", year = "This year"
+    var days: Int? {
+        switch self { case .any: nil; case .today: 1; case .week: 7; case .month: 30; case .year: 365 }
+    }
+}
+
+enum SearchResultType: String, CaseIterable {
+    case all = "All", videos = "Videos", shorts = "Shorts"
+}
+
+enum SearchDuration: String, CaseIterable {
+    case any = "Any length", underFour = "Under 4 min", medium = "4–20 min", long = "Over 20 min"
+}
+
+enum SearchFeature: String, CaseIterable {
+    case all = "All", hd = "HD", live = "Live"
+}
+
+enum SearchSort: String, CaseIterable {
+    case relevance = "Relevance", uploadDate = "Upload date", viewCount = "View count", rating = "Rating"
+}
+
+struct SearchFiltersPanel: View {
+    let accent: Color
+    @Binding var uploadDate: SearchUploadDate
+    @Binding var resultType: SearchResultType
+    @Binding var duration: SearchDuration
+    @Binding var feature: SearchFeature
+    @Binding var sort: SearchSort
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 20) {
+                Label("Search filters", systemImage: "slider.horizontal.3")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.92))
+
+                filterSection("Upload date", values: SearchUploadDate.allCases, selection: $uploadDate)
+                filterSection("Type", values: SearchResultType.allCases, selection: $resultType)
+                filterSection("Duration", values: SearchDuration.allCases, selection: $duration)
+                filterSection("Features", values: SearchFeature.allCases, selection: $feature)
+                filterSection("Sort by", values: SearchSort.allCases, selection: $sort)
+            }
+            .padding(18)
+        }
+        .background(Color.white.opacity(0.035))
+    }
+
+    private func filterSection<Value: RawRepresentable & CaseIterable & Hashable>(
+        _ title: String,
+        values: Value.AllCases,
+        selection: Binding<Value>
+    ) -> some View where Value.RawValue == String, Value.AllCases: RandomAccessCollection {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.72))
+
+            FlowLayout(spacing: 7) {
+                ForEach(Array(values), id: \.self) { value in
+                    FilterChip(
+                        title: value.rawValue,
+                        isSelected: selection.wrappedValue == value,
+                        accent: accent
+                    ) { selection.wrappedValue = value }
+                }
+            }
+        }
+    }
+}
+
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > maxWidth, x > 0 { x = 0; y += rowHeight + spacing; rowHeight = 0 }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return CGSize(width: maxWidth.isFinite ? maxWidth : x, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX, x > bounds.minX { x = bounds.minX; y += rowHeight + spacing; rowHeight = 0 }
+            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
+struct FilterChip: View {
+    let title: String
+    let isSelected: Bool
+    let accent: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 10.5, weight: isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? .white : .white.opacity(0.6))
+                .padding(.horizontal, 11)
+                .frame(height: 30)
+                .background(isSelected ? accent.opacity(0.34) : Color.white.opacity(0.055), in: Capsule())
+                .overlay { Capsule().strokeBorder(isSelected ? accent.opacity(0.6) : Color.white.opacity(0.09), lineWidth: 0.6) }
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -470,7 +975,7 @@ struct ErrorView: View {
         VStack(spacing: 16) {
             Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 36)).foregroundColor(Color(hex: "FFBD2E"))
             Text(message).font(.system(size: 13)).foregroundColor(.white.opacity(0.55)).multilineTextAlignment(.center)
-            Button("Coba Lagi", action: retry)
+            Button("Try Again", action: retry)
                 .font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
                 .padding(.horizontal, 20).padding(.vertical, 9)
                 .background(state.currentTheme.accentColor).clipShape(Capsule()).buttonStyle(.plain)
@@ -514,7 +1019,7 @@ struct ApiKeySheet: View {
                 guard !input.trimmingCharacters(in: .whitespaces).isEmpty else { return }
                 state.saveApiKey(input.trimmingCharacters(in: .whitespaces))
             } label: {
-                Text("Simpan & Mulai")
+                Text("Save & Continue")
                     .font(.system(size: 14, weight: .bold)).foregroundColor(.white)
                     .frame(width: 180, height: 42)
                     .background(state.currentTheme.accentColor).clipShape(Capsule())
@@ -522,7 +1027,7 @@ struct ApiKeySheet: View {
             }
             .buttonStyle(.plain).disabled(input.isEmpty)
 
-            Link("Cara dapatkan API key →",
+            Link("How to get an API key →",
                  destination: URL(string: "https://console.cloud.google.com/apis/library/youtube.googleapis.com")!)
                 .font(.system(size: 12)).foregroundColor(Color(hex: "FF6666"))
         }
@@ -530,5 +1035,18 @@ struct ApiKeySheet: View {
         .background { ThemeBackground(state: state) }
         .frame(width: 460, height: 380)
         .preferredColorScheme(.dark)
+        .onAppear { input = state.apiKey }
+        .overlay(alignment: .topTrailing) {
+            Button { state.showApiKeySheet = false } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .frame(width: 30, height: 30)
+                    .background(Color.white.opacity(0.07), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .help("Close")
+            .padding(16)
+        }
     }
 }

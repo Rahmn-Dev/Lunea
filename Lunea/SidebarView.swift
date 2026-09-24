@@ -2,13 +2,8 @@ import SwiftUI
 
 struct SidebarView: View {
     @ObservedObject var state: AppState
-    @State private var isHovered = false
     @Binding var selectedTab: ContentView.Tab
-    @State private var isAccordionHovered = false
     @State private var isThemesExpanded = false
-    
-    
-    // 🔥 BINDING BARU: Terhubung langsung ke ContentView
     @Binding var isCollapsed: Bool
 
     private let menuItems: [(icon: String, label: String, key: ContentView.Tab)] = [
@@ -26,55 +21,32 @@ struct SidebarView: View {
     ]
 
     var body: some View {
-        
         VStack(alignment: isCollapsed ? .center : .leading, spacing: 0) {
-            
-            // --- TOP HEADER: Window Controls & Collapse Button Side by Side ---
-            HStack(spacing: 0) {
-                if !isCollapsed {
-                    HStack(spacing: 8) {
-                        TLButton(color: Color(hex: "FF5F57"), icon: "xmark") { NSApplication.shared.terminate(nil) }
-                        TLButton(color: Color(hex: "FFBD2E"), icon: "minus") { NSApplication.shared.windows.first?.miniaturize(nil) }
-                        TLButton(color: Color(hex: "28C840"), icon: "arrow.up.left.and.arrow.down.right") { NSApplication.shared.windows.first?.zoom(nil) }
-                    }
-                    .transition(.opacity.combined(with: .move(edge: .leading)))
-                    Spacer()
+            if !isCollapsed {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("YOUR MEDIA SPACE")
+                        .font(.system(size: 10, weight: .bold))
+                        .tracking(1.4)
+                        .foregroundStyle(.white.opacity(0.32))
+                    Text("Discover")
+                        .font(.system(size: 25, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.94))
                 }
-
-                // Tombol Icon Collapse (VisionOS style)
-                Button {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        isCollapsed.toggle()
-                    }
-                } label: {
-                    Image(systemName: isCollapsed ? "sidebar.right" : "sidebar.left")
-                        .font(.system(size: 13, weight: .bold))
-                        // 🔥 Efek warna berubah saat hovered
-                        .foregroundColor(isHovered ? .white : .white.opacity(0.6))
-                        .frame(width: 32, height: 32)
-                        // 🔥 Efek background lebih terang saat hovered
-                        .background(Color.white.opacity(isHovered ? 0.15 : (isCollapsed ? 0.08 : 0)))
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                // 🔥 Deteksi mouse masuk/keluar
-                .onHover { hovering in
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isHovered = hovering
-                    }
-                }
+                .padding(.horizontal, 22)
+                .padding(.top, 16)
+                .padding(.bottom, 22)
+                .transition(.opacity)
+            } else {
+                Image(systemName: "sparkles.tv.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(state.currentTheme.accentColor)
+                    .frame(height: 64)
             }
-            .padding(.top, 24)
-            .padding(.bottom, 24)
-            .padding(.horizontal, isCollapsed ? 0 : 20)
-            .frame(width: isCollapsed ? 75 : 250)
 
-            // --- MENU ITEMS SCROLLVIEW ---
             ScrollView(showsIndicators: false) {
                 VStack(alignment: isCollapsed ? .center : .leading, spacing: 4) {
-                    
                     if !isCollapsed {
-                        SidebarSectionLabel(text: "Library")
+                        SidebarSectionLabel(text: "Browse")
                             .transition(.opacity)
                     } else {
                         Divider().background(Color.white.opacity(0.06)).padding(.horizontal, 16).padding(.vertical, 8)
@@ -86,11 +58,15 @@ struct SidebarView: View {
                             label: item.label,
                             isActive: selectedTab == item.key,
                             isCollapsed: isCollapsed,
-                            action: { // 🔥 PENTING: Bungkus aksinya di dalam parameter 'action'
+                            action: {
                                 withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                                     selectedTab = item.key
+                                    state.clearSearch()
                                 }
-                                if item.key == .home {
+                                if state.isShowingPlayer {
+                                    state.isPlayerMinimized = true
+                                }
+                                if item.key == .home || item.key == .explore {
                                     Task { await state.loadHome() }
                                 }
                             }
@@ -98,9 +74,6 @@ struct SidebarView: View {
                     }
 
                     Spacer().frame(height: 24)
-                    
-                    
-                    
                     if !isCollapsed {
                         SidebarSectionLabel(text: "My Collection")
                             .transition(.opacity)
@@ -114,16 +87,23 @@ struct SidebarView: View {
                             label: item.label,
                             isActive: selectedTab == item.key,
                             isCollapsed: isCollapsed,
-                            action: { // 🔥 Pasang aksinya di dalam parameter action
-                                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) { selectedTab = item.key }
+                            action: {
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                                    selectedTab = item.key
+                                    state.clearSearch()
+                                }
+                                if state.isShowingPlayer {
+                                    state.isPlayerMinimized = true
+                                }
                             }
                         )
                     }
                 }
+                .padding(.bottom, 12)
             }
 
             Spacer()
-            
+
             VStack(spacing: 0) {
                 Button {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
@@ -147,15 +127,14 @@ struct SidebarView: View {
                     }
                     .padding(.vertical, 8)
                     .padding(.horizontal, 12)
-                    .foregroundColor(.white.opacity(isAccordionHovered ? 1.0 : 0.7))
+                    .foregroundColor(.white.opacity(0.72))
                     .background(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(isAccordionHovered ? Color.white.opacity(0.08) : Color.clear)
+                            .fill(Color.white.opacity(0.035))
                     )
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .onHover { isAccordionHovered = $0 }
 
                 if isThemesExpanded {
                     VStack(alignment: .leading, spacing: 2) {
@@ -168,41 +147,44 @@ struct SidebarView: View {
                 }
             }
             .padding(.horizontal, isCollapsed ? 8 : 12)
-            .padding(.bottom, 16)
+            .padding(.bottom, 10)
 
-            // --- BOTTOM USER PROFILE (Menciut jadi Avatar Bulat saja) ---
-            Button {} label: {
-                HStack(spacing: isCollapsed ? 0 : 12) {
-                    if isCollapsed { Spacer() }
-                    
-                    ZStack {
-                        Circle()
-                            .fill(LinearGradient(colors: [Color(hex: "4facfe"), Color(hex: "00f2fe")], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(.white)
-                    }
-                    .frame(width: 28, height: 28)
-
+            Button { state.showApiKeySheet = true } label: {
+                HStack(spacing: 11) {
+                    Image(systemName: "key.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(state.currentTheme.accentColor)
+                        .frame(width: 30, height: 30)
+                        .background(state.currentTheme.accentColor.opacity(0.14), in: RoundedRectangle(cornerRadius: 9))
                     if !isCollapsed {
-                        Text("Paul")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.95))
-                            .transition(.opacity)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("YouTube API")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.85))
+                            Text(state.apiKey.isEmpty ? "Not connected" : "Connected")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.white.opacity(0.4))
+                        }
                         Spacer()
-                    } else {
-                        Spacer()
+                        Circle()
+                            .fill(state.apiKey.isEmpty ? Color.orange : Color.green)
+                            .frame(width: 6, height: 6)
                     }
                 }
-                .padding(.horizontal, isCollapsed ? 8 : 14)
-                .padding(.vertical, isCollapsed ? 10 : 12)
-                .glassEffect()
-               
+                .padding(10)
+                .frame(maxWidth: .infinity)
+                .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.6)
+                }
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, isCollapsed ? 10 : 16)
-            .padding(.bottom, 16)
+            .help("Configure YouTube API key")
+            .padding(.horizontal, isCollapsed ? 14 : 16)
+            .padding(.bottom, 18)
         }
+        .background(Color.black.opacity(0.08))
     }
 }
 // MARK: - Tombol Tema Mandiri (Anti-Bug Hover & Klik Seluruh Area)
@@ -248,29 +230,23 @@ struct ThemeButton: View {
 }
 struct ThemeBackground: View {
     @ObservedObject var state: AppState
-    @State private var start = UnitPoint(x: 0, y: -0.5)
-    @State private var end = UnitPoint(x: 1, y: 1.5)
 
     var body: some View {
-        TimelineView(.animation) { context in
-            let time = context.date.timeIntervalSinceReferenceDate
-            let angle = time.remainder(dividingBy: 5) * (Double.pi * 2) / 5
-            
-            // 🔥 Menggunakan palet khusus dari tema
-            LinearGradient(
-                colors: state.currentTheme.gradientColors,
-                startPoint: start,
-                endPoint: end
+        LinearGradient(
+            colors: state.currentTheme.gradientColors,
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .overlay {
+            RadialGradient(
+                colors: [state.currentTheme.accentColor.opacity(0.13), .clear],
+                center: .topTrailing,
+                startRadius: 0,
+                endRadius: 620
             )
-            .hueRotation(.degrees(sin(angle) * 15)) // Perputaran warna yang lebih halus
-            .ignoresSafeArea()
-            .onAppear {
-                withAnimation(.easeInOut(duration: 10).repeatForever(autoreverses: true)) {
-                    start = UnitPoint(x: 1, y: 0)
-                    end = UnitPoint(x: 0, y: 1)
-                }
-            }
         }
+        .ignoresSafeArea()
+        .animation(.easeInOut(duration: 0.25), value: state.currentTheme.name)
     }
 }
 
@@ -328,7 +304,6 @@ struct SidebarRow: View {
                 if isActive {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(state.currentTheme.accentColor)
-                        .shadow(color: state.currentTheme.accentColor.opacity(0.3), radius: 6, y: 1)
                 } else if isHovered {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(Color.white.opacity(0.08))

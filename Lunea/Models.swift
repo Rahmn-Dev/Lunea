@@ -14,7 +14,9 @@ struct PageInfo: Codable {
 }
 
 struct YouTubeSearchItem: Codable, Identifiable {
-    var id: String { snippet.publishedAt + (videoId ?? UUID().uuidString) }
+    var id: String {
+        videoId ?? channelId ?? playlistId ?? "\(snippet.channelId)-\(snippet.publishedAt)"
+    }
     let kind: String?
     let etag: String?
     let itemId: ItemId
@@ -69,7 +71,7 @@ struct YouTubeSearchItem: Codable, Identifiable {
         let iso = ISO8601DateFormatter()
         guard let date = iso.date(from: snippet.publishedAt) else { return snippet.publishedAt }
         let rel = RelativeDateTimeFormatter()
-        rel.locale = Locale(identifier: "id_ID")
+        rel.locale = Locale(identifier: "en_US")
         rel.unitsStyle = .full
         return rel.localizedString(for: date, relativeTo: Date())
     }
@@ -116,6 +118,20 @@ struct YouTubeVideoDetail: Codable, Identifiable {
 
     struct ContentDetails: Codable {
         let duration: String? // ISO 8601 duration
+        let definition: String?
+
+        var durationSeconds: Int {
+            guard let duration else { return 0 }
+            var hours = 0, minutes = 0, seconds = 0
+            var number = ""
+            for character in duration {
+                if character.isNumber { number.append(character) }
+                else if character == "H" { hours = Int(number) ?? 0; number = "" }
+                else if character == "M" { minutes = Int(number) ?? 0; number = "" }
+                else if character == "S" { seconds = Int(number) ?? 0; number = "" }
+            }
+            return (hours * 3600) + (minutes * 60) + seconds
+        }
 
         var formattedDuration: String {
             guard let d = duration else { return "" }

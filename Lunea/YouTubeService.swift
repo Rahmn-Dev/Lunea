@@ -83,9 +83,9 @@ class YouTubeService: ObservableObject {
 
     // MARK: - Categories / suggestions
 
-    func fetchByCategory(categoryId: String, regionCode: String = "ID", maxResults: Int = 20) async throws -> YouTubeVideoListResponse {
+    func fetchByCategory(categoryId: String, regionCode: String = "ID", maxResults: Int = 20, pageToken: String? = nil) async throws -> YouTubeVideoListResponse {
         var components = URLComponents(string: "\(baseURL)/videos")!
-        components.queryItems = [
+        var params: [URLQueryItem] = [
             .init(name: "part", value: "snippet,statistics,contentDetails"),
             .init(name: "chart", value: "mostPopular"),
             .init(name: "videoCategoryId", value: categoryId),
@@ -93,6 +93,8 @@ class YouTubeService: ObservableObject {
             .init(name: "maxResults", value: "\(maxResults)"),
             .init(name: "key", value: Self.apiKey),
         ]
+        if let pageToken { params.append(.init(name: "pageToken", value: pageToken)) }
+        components.queryItems = params
         let (data, response) = try await URLSession.shared.data(from: components.url!)
         try checkResponse(response)
         return try JSONDecoder().decode(YouTubeVideoListResponse.self, from: data)
@@ -111,8 +113,8 @@ class YouTubeService: ObservableObject {
         case forbidden, badRequest, httpError(Int)
         var errorDescription: String? {
             switch self {
-            case .forbidden: return "API key tidak valid atau quota habis"
-            case .badRequest: return "Request tidak valid"
+            case .forbidden: return "The API key is invalid or its quota has been exceeded"
+            case .badRequest: return "The request is invalid"
             case .httpError(let code): return "HTTP Error \(code)"
             }
         }
@@ -164,6 +166,7 @@ class AppState: ObservableObject {
     @Published var isSearchActive = false
     @Published var trendingVideos: [YouTubeVideoDetail] = []
     @Published var searchResults: [YouTubeSearchItem] = []
+    @Published var searchResultDetails: [YouTubeVideoDetail] = []
     @Published var selectedVideoId: String? = nil
     @Published var selectedVideoDetail: YouTubeVideoDetail? = nil
     @Published var relatedVideos: [YouTubeSearchItem] = []
@@ -171,9 +174,10 @@ class AppState: ObservableObject {
     @Published var isSearching = false
     @Published var errorMessage: String? = nil
     @Published var searchQuery = ""
-    @Published var selectedCategory = "Semua"
+    @Published var selectedCategory = "All"
     @Published var showApiKeySheet = false
     @Published var nextPageToken: String? = nil
+    @Published var searchNextPageToken: String? = nil
     @Published var relatedVideoDetails: [YouTubeVideoDetail] = []
     
     let categories = ["All", "Music", "Gaming", "News", "Sports", "Tech", "Comedy", "Movies"]
@@ -184,14 +188,18 @@ class AppState: ObservableObject {
     ]
 
     private let service = YouTubeService()
-    private let keyStorageKey = ""
+    private let keyStorageKey = "lunea.youtubeDataAPIKey"
+    private var homeRequestID = UUID()
 
     init() {
         self.currentTheme = availableThemes[0]
-        // Load saved API key
-        if let saved = UserDefaults.standard.string(forKey: keyStorageKey), !saved.isEmpty {
+        // Migrate keys saved by older builds that accidentally used an empty defaults key.
+        let savedKey = UserDefaults.standard.string(forKey: keyStorageKey)
+            ?? UserDefaults.standard.string(forKey: "")
+        if let saved = savedKey, !saved.isEmpty {
             apiKey = saved
             YouTubeService.apiKey = saved
+            UserDefaults.standard.set(saved, forKey: keyStorageKey)
         } else {
             showApiKeySheet = true
         }
@@ -217,12 +225,20 @@ class AppState: ObservableObject {
             let ids = res.items.compactMap { $0.videoId }
             if !ids.isEmpty {
                 let details = try await service.fetchVideoDetails(ids: ids)
-                // Simpan ke trendingVideos sementara TIDAK — pakai array terpisah
-                // Tambahkan @Published var relatedVideoDetails: [YouTubeVideoDetail] = []
+                // Keep related results separate from the home feed.
                 self.relatedVideoDetails = details.items
             }
         } catch {
-            print("❌ Gagal load related videos:", error)
+            guard let title = selectedVideoDetail?.snippet?.title, !title.isEmpty else { return }
+            do {
+                let fallback = try await service.search(query: title, maxResults: 15)
+                let ids = fallback.items.compactMap(\.videoId).filter { $0 != videoId }
+                guard !ids.isEmpty else { return }
+                let details = try await service.fetchVideoDetails(ids: ids)
+                relatedVideoDetails = details.items
+            } catch {
+                relatedVideoDetails = []
+            }
         }
     }
 
@@ -230,36 +246,51 @@ class AppState: ObservableObject {
         guard !apiKey.isEmpty && apiKey != "YOUR_API_KEY_HERE" else {
             showApiKeySheet = true; return
         }
-        guard !isLoading else { return }
+        let requestID = UUID()
+        homeRequestID = requestID
+        let requestedCategory = selectedCategory
         isLoading = true
+        defer {
+            if homeRequestID == requestID { isLoading = false }
+        }
         errorMessage = nil
         do {
-            if selectedCategory == "Semua" {
-                            let res = try await service.fetchTrending()
-                            trendingVideos = res.items
-                            nextPageToken = res.nextPageToken // 🔥 Tambahkan ini agar loadMore bisa jalan
-                        } else if let catId = categoryIds[selectedCategory] {
-                            let res = try await service.fetchByCategory(categoryId: catId)
-                            trendingVideos = res.items
-                            nextPageToken = res.nextPageToken // 🔥 Tambahkan ini agar loadMore bisa jalan
-                        }
+            let response: YouTubeVideoListResponse
+            if requestedCategory == "All" {
+                response = try await service.fetchTrending()
+            } else if let categoryId = categoryIds[requestedCategory] {
+                response = try await service.fetchByCategory(categoryId: categoryId)
+            } else {
+                response = try await service.fetchTrending()
+            }
+            guard homeRequestID == requestID, selectedCategory == requestedCategory else { return }
+            trendingVideos = response.items
+            nextPageToken = response.nextPageToken
+        } catch {
+            guard homeRequestID == requestID else { return }
+            errorMessage = error.localizedDescription
+        }
+    }
+    func loadMore() async {
+        guard !isLoading, let pageToken = nextPageToken else { return }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let response: YouTubeVideoListResponse
+            if selectedCategory == "All" {
+                response = try await service.fetchTrending(pageToken: pageToken)
+            } else if let categoryId = categoryIds[selectedCategory] {
+                response = try await service.fetchByCategory(categoryId: categoryId, pageToken: pageToken)
+            } else {
+                return
+            }
+            let existing = Set(trendingVideos.map(\.id))
+            trendingVideos.append(contentsOf: response.items.filter { !existing.contains($0.id) })
+            nextPageToken = response.nextPageToken
         } catch {
             errorMessage = error.localizedDescription
         }
-        isLoading = false
     }
-    func loadMore() async {
-            guard !isLoading && nextPageToken != nil else { return }
-            isLoading = true
-            do {
-                let res = try await service.fetchTrending(pageToken: nextPageToken)
-                trendingVideos.append(contentsOf: res.items)
-                nextPageToken = res.nextPageToken
-            } catch {
-                print("❌ Gagal load lebih banyak:", error)
-            }
-            isLoading = false
-        }
 
     func search() async {
             let query = searchQuery.trimmingCharacters(in: .whitespaces)
@@ -270,6 +301,7 @@ class AppState: ObservableObject {
             guard !isSearching else { return }
             
             isSearching = true
+            defer { isSearching = false }
             isSearchActive = true
             errorMessage = nil
             
@@ -283,12 +315,19 @@ class AppState: ObservableObject {
             do {
                 let res = try await service.search(query: query)
                 searchResults = res.items
-                nextPageToken = res.nextPageToken
+                searchNextPageToken = res.nextPageToken
+                let orderedIDs = res.items.compactMap(\.videoId)
+                if !orderedIDs.isEmpty {
+                    let details = try await service.fetchVideoDetails(ids: orderedIDs)
+                    let detailsByID = Dictionary(uniqueKeysWithValues: details.items.map { ($0.id, $0) })
+                    searchResultDetails = orderedIDs.compactMap { detailsByID[$0] }
+                } else {
+                    searchResultDetails = []
+                }
             } catch {
                 errorMessage = error.localizedDescription
                 print("❌ Search Error:", error)
             }
-            isSearching = false
         }
 
     func selectVideo(_ videoId: String) async {
@@ -302,7 +341,8 @@ class AppState: ObservableObject {
             
             // BARU kita ganti ID-nya dan reset detail lama karena ini pasti video baru!
             self.selectedVideoId = videoId
-            self.selectedVideoDetail = nil // Mengosongkan judul lama agar UI jadi "Memuat..."
+            self.selectedVideoDetail = nil
+            self.relatedVideoDetails = []
             self.isPlayerMinimized = false
             
             do {
@@ -311,18 +351,21 @@ class AppState: ObservableObject {
                 await loadRelatedVideos(for: videoId)
             } catch {
                 self.errorMessage = error.localizedDescription
-                print("❌ Gagal load detail video:", error)
+                print("❌ Failed to load video details:", error)
             }
         }
     func closePlayer() {
             selectedVideoId = nil
             selectedVideoDetail = nil
+            relatedVideoDetails = []
             isPlayerMinimized = false
         }
 
     func clearSearch() {
         searchQuery = ""
         searchResults = []
+        searchResultDetails = []
+        searchNextPageToken = nil
         isSearchActive = false
        // selectedVideoId = nil
        // selectedVideoDetail = nil

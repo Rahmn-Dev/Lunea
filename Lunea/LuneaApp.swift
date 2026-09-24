@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct WatchTubeApp: App {
+struct LuneaApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -16,29 +16,35 @@ struct WatchTubeApp: App {
     }
 }
 
-// RootView removes ALL native chrome
 struct RootView: View {
     var body: some View {
         ContentView()
             .ignoresSafeArea()
             .onAppear {
-                // Remove native title bar & set window properties
                 DispatchQueue.main.async {
                     guard let window = NSApplication.shared.windows.first else { return }
                     window.titleVisibility = .hidden
                     window.titlebarAppearsTransparent = true
                     window.isMovableByWindowBackground = true
                     window.styleMask.insert(.fullSizeContentView)
-                    window.styleMask.remove(.titled)
-                    window.styleMask.insert(.borderless)
                     window.backgroundColor = .clear
                     window.isOpaque = false
                     window.hasShadow = true
-                    // Re-add close/min/max but hidden — keeps keyboard shortcuts
                     window.standardWindowButton(.closeButton)?.isHidden = true
                     window.standardWindowButton(.miniaturizeButton)?.isHidden = true
                     window.standardWindowButton(.zoomButton)?.isHidden = true
+                    window.collectionBehavior = [.fullScreenPrimary, .managed]
                 }
             }
+            // ✅ Escape key untuk exit video fullscreen
+            .onKeyPress(.escape) {
+                NotificationCenter.default.post(name: .exitVideoFullscreen, object: nil)
+                return .ignored
+            }
     }
+}
+
+extension Notification.Name {
+    static let exitVideoFullscreen = Notification.Name("exitVideoFullscreen")
+    static let toggleVideoFullscreen = Notification.Name("toggleVideoFullscreen")
 }

@@ -58,37 +58,16 @@ extension View {
 // MARK: - Animated Background Orbs
 
 struct BackgroundOrbs: View {
-    @State private var start = UnitPoint(x: 0, y: -0.5)
-        @State private var end = UnitPoint(x: 1, y: 1.5)
-        
-        let colors = [
-            Color(hex: "0A0A12"),
-            Color(hex: "1A1A2E"),
-            Color(hex: "16213E"),
-            Color(hex: "0A0A12")
-        ]
+    let colors = [
+        Color(hex: "0A0A12"),
+        Color(hex: "1A1A2E"),
+        Color(hex: "16213E")
+    ]
 
-        var body: some View {
-            TimelineView(.animation) { context in
-                // Menghitung perubahan waktu untuk menggerakkan gradien
-                let time = context.date.timeIntervalSinceReferenceDate
-                let angle = time.remainder(dividingBy: 5) * (Double.pi * 2) / 5
-                
-                LinearGradient(
-                    gradient: Gradient(colors: colors),
-                    startPoint: start,
-                    endPoint: end
-                )
-                .hueRotation(.degrees(sin(angle) * 20)) // Efek pergeseran warna yang lembut
-                .ignoresSafeArea()
-                .onAppear {
-                    withAnimation(.easeInOut(duration: 8).repeatForever(autoreverses: true)) {
-                        start = UnitPoint(x: 1, y: 0)
-                        end = UnitPoint(x: 0, y: 1)
-                    }
-                }
-            }
-        }
+    var body: some View {
+        LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+            .ignoresSafeArea()
+    }
 }
 
 // MARK: - Traffic Light Buttons
