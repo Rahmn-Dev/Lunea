@@ -1,5 +1,10 @@
-# Lunea 
-<img width="1920" height="1440" alt="565shots_so" src="https://github.com/user-attachments/assets/df31a621-3bc1-49f9-8d55-392e0d710af2" />
+<p align="center">
+ <img width="128" height="128" alt="Icon-iOS-Default-128x128@1x" src="https://github.com/user-attachments/assets/01f824c7-38f4-4254-9fe4-fc49e05fad01" />
+
+</p>
+<h1 align="center">Lunea</h1>
+
+<img width="1920" height="1440" alt="512shots_so" src="https://github.com/user-attachments/assets/148c7c23-76f7-4536-9dcf-87264ed74f34" />
 
 **Lunea** is a modern and elegant desktop YouTube client designed specifically for **macOS**. Built using **SwiftUI**, Lunea delivers a seamless browsing and viewing experience with a *Glassmorphism / visionOS* style interface, smooth gradient animations, and a comfortable split-screen layout designed for multitasking.
 
@@ -47,8 +52,6 @@
    - Press **`Cmd + R`** in Xcode to build and run the app on your Mac.
 
 ---
-
-## <img width="1920" height="1440" alt="512shots_so" src="https://github.com/user-attachments/assets/148c7c23-76f7-4536-9dcf-87264ed74f34" />
 ## <img width="1920" height="1080" alt="81_1x_shots_so" src="https://github.com/user-attachments/assets/4798481d-dfa8-4333-b865-b3c28afb9671" />
 ##
  Project Structure
