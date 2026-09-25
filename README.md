@@ -26,11 +26,8 @@
 <br>
 
 <p align="center">
-  <img
-    width="1920"
-    alt="Lunea for macOS"
-    src="https://github.com/user-attachments/assets/148c7c23-76f7-4536-9dcf-87264ed74f34"
-  />
+<img width="1920" height="1440" alt="lunea" src="https://github.com/user-attachments/assets/60671f8c-fc84-4eb6-9d4c-403d093ef914" />
+
 </p>
 
 ## Overview
@@ -52,11 +49,8 @@ It reimagines the YouTube desktop experience around a dedicated macOS interface,
 <br>
 
 <p align="center">
-  <img
-    width="1920"
-    alt="Lunea Interface"
-    src="https://github.com/user-attachments/assets/4798481d-dfa8-4333-b865-b3c28afb9671"
-  />
+<img width="1920" height="1080" alt="257_1x_shots_so" src="https://github.com/user-attachments/assets/0edc2fb9-af4b-44a6-b1bc-e6e8fe4ed687" />
+
 </p>
 
 ## Tech Stack
